@@ -1,46 +1,31 @@
-
-
 export type Field = {
     headers:{[k:string]:string};
     value:Buffer;
 }
 
+type Part = "headerKey"|"headerValue"|"data"|"end";
+
+const LINE_BREAK = "\r\n";
 
 export default function parseMultiPart(body:Buffer, rawBoundary:string){
 
-    let currentPart:"headerKey"|"headerValue"|"data"|"end" = "headerKey";
+    let currentPart:Part = "headerKey";
 
-    const startBoundary= "--"+rawBoundary;
-    const firstBreakLineChar = String.fromCharCode(body[startBoundary.length]);
-    const secondBreakLineChar =  String.fromCharCode(body[startBoundary.length+1]);
-    let breakLine = "";
+    const startBoundary = "--"+rawBoundary + LINE_BREAK;
+    const boundary = LINE_BREAK + "--" + rawBoundary;
 
-    if(firstBreakLineChar === "\n"){
-        breakLine = "\n";
-    }else if(firstBreakLineChar === "\r"){
+    let cursor = body.indexOf(startBoundary);
 
-        if(secondBreakLineChar ===  "\n"){
-            breakLine = "\r\n";
-        }else{
-            breakLine = "\r";
-        }
-    }
-
-    if(breakLine === ""){
+    if(cursor === -1){
         console.log("multipart disposed");
         currentPart = "end";
     }
 
-    const boundary = breakLine + startBoundary;
-    let cursor = boundary.length;
+    cursor += startBoundary.length;
 
     // console.log({body});
 
-    console.log("breaklineLength:"+breakLine.length);
-
-
     const fields:Field[] = [];
- 
     let headerKeys = [];
     let headerValues = [];
 
@@ -68,23 +53,23 @@ export default function parseMultiPart(body:Buffer, rawBoundary:string){
         if(currentPart === "headerValue"){
 
             let headerValueStart =cursor;
-            let headerValueEnd = body.indexOf(breakLine, headerValueStart);
+            let headerValueEnd = body.indexOf(LINE_BREAK, headerValueStart);
 
             if(headerValueEnd === -1){
                 currentPart = "end";
             }else{
                 //move cursor to next line
-                cursor = headerValueEnd + breakLine.length;
+                cursor = headerValueEnd + LINE_BREAK.length;
                 // console.log({value:body.subarray(headerValueStart, headerValueEnd).toString()});
                 headerValues.push([headerValueStart, headerValueEnd]);
 
                 let charsBehindHeaderValue = "";
-                for(let i = 0; i < breakLine.length; i++){
+                for(let i = 0; i < LINE_BREAK.length; i++){
                     charsBehindHeaderValue += String.fromCharCode(body[cursor+i]);
                 }
 
-                if(charsBehindHeaderValue === breakLine){
-                    cursor += breakLine.length;
+                if(charsBehindHeaderValue === LINE_BREAK){
+                    cursor += LINE_BREAK.length;
                     currentPart = "data";
                 }else{
                     currentPart = "headerKey";
@@ -128,8 +113,8 @@ export default function parseMultiPart(body:Buffer, rawBoundary:string){
                 if(charsBehindBoundary === "--"){
                     cursor += 2;
                     currentPart = "end";
-                }else if(charsBehindBoundary.slice(0, breakLine.length) === breakLine){
-                    cursor += breakLine.length;
+                }else if(charsBehindBoundary.slice(0, LINE_BREAK.length) === LINE_BREAK){
+                    cursor += LINE_BREAK.length;
                     currentPart = "headerKey";
                 }
             }

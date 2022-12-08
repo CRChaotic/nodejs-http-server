@@ -1,21 +1,20 @@
+import { tmpdir } from "os";
 import { Readable, Transform, TransformCallback, TransformOptions } from "stream";
+import { testKMP } from "./crossStringsKMP";
 
 export type Field = {
     headers:{[k:string]:string};
-    data:Buffer;
+    value:Buffer|Buffer[];
 }
 
 type Part = "headerKey"|"headerValue"|"data"|"end";
 
-export class MultipartFormDataParser extends Transform{
+export class MultipartParser extends Transform{
     
     currentPart:Part;
     boundary:string;
     rawBoundary:string;
     breakLine:string;
-    fields:Field[];
-    tmpHeaderValuesIndex:number[][];
-    tmpHeaderKeysIndex:number[][];
     chunkCache:Buffer[];
 
     headerKeyCache:string[];
@@ -29,9 +28,6 @@ export class MultipartFormDataParser extends Transform{
         this.rawBoundary = rawBoundary;
         this.boundary = "";
         this.breakLine = "";
-        this.tmpHeaderKeysIndex = [];
-        this.tmpHeaderValuesIndex = [];
-        this.fields = [];
         this.chunkCache = [];
 
         this.headerKeyCache = [];
@@ -47,7 +43,7 @@ export class MultipartFormDataParser extends Transform{
             const startBoundary= "--"+this.rawBoundary;
             const firstBreakLineChar = String.fromCharCode(chunk[startBoundary.length]);
             const secondBreakLineChar =  String.fromCharCode(chunk[startBoundary.length+1]);
-        
+
             if(firstBreakLineChar === "\n"){
                 this.breakLine = "\n";
             }else if(firstBreakLineChar === "\r"){
@@ -76,7 +72,6 @@ export class MultipartFormDataParser extends Transform{
                 const headerKeyEnd = chunk.indexOf(":");
     
                 if(headerKeyEnd === -1){
-                    // this.currentPart = "end";
                     this.chunkCache.push(chunk);
                     
                     break;
@@ -87,7 +82,7 @@ export class MultipartFormDataParser extends Transform{
                     this.headerKeyCache.push(key);
                     // console.log({key});
                     this.chunkCache = [];
-                    //move cursor to colon
+                    //move cursor behind colon
                     let offset = headerKeyEnd+1;
                     this.currentPart = "headerValue";
                     
@@ -99,11 +94,9 @@ export class MultipartFormDataParser extends Transform{
     
             if(this.currentPart === "headerValue"){
     
-                // let headerValueStart = this.cursor;
                 const headerValueEnd = chunk.indexOf(this.breakLine);
     
                 if(headerValueEnd === -1){
-                    // this.currentPart = "end";
                     this.chunkCache.push(chunk);
                     break;
                 }else{
@@ -139,7 +132,7 @@ export class MultipartFormDataParser extends Transform{
 
                 const dataEnd = chunk.indexOf(this.boundary);
 
-                const field:Field = {headers:{}, data:Buffer.from("")};
+                const field:Field = {headers:{}, value:Buffer.from("")};
 
                 for(let i = 0; i < this.headerKeyCache.length; i++){
                     const key = this.headerKeyCache[i];
@@ -150,20 +143,20 @@ export class MultipartFormDataParser extends Transform{
                 }
 
                 if(dataEnd === -1){
-                    field.data = chunk;
+                    field.value = chunk;
                     this.push(field);
-
                     break;
                 }else{
 
                     this.headerKeyCache = [];
                     this.headerValueCache = [];
 
-                    field.data = chunk.subarray(0, dataEnd);
+                    field.value = chunk.subarray(0, dataEnd);
                     this.push(field);
-                    //move cursor behind this.boundary
+                    this.chunkCache = [];
+                    //move cursor behind boundary
                     let offset = dataEnd + this.boundary.length;
-                    // console.log({data:chunk.subarray(dataStart, dataEnd).toString()});
+                    // console.log({value:chunk.subarray(dataStart, dataEnd).toString()});
                     // callback(null, field);
     
                     let charsBehindBoundary = "";
@@ -192,26 +185,124 @@ export class MultipartFormDataParser extends Transform{
 }
 
 
-let boundary = "--974767299852498929531610575"
-let testMultipart = `----974767299852498929531610575
-Content-Disposition: form-data; name="description"
+const rawboundary = "--123"
+let test1 = `----123
+Content-Dis*position: form-data; name="descrip*tion"
 
-some text
-----974767299852498929531610575
-Content-Disposition: form-data; name="myFile"; filename="foo.txt"
-Content-Type: text/plain
+some te*xt
+----123
+Content-Disposition: form-data; name="myFile"; filename="foo.txt"*
+*Content-Type: text/p*lain
 
-(content of the uploaded file foo.txt)
-----974767299852498929531610575--
+co*ntent of the uploaded file foo.txt
+----123--
 `;
 
 export function testMultipartParser(){
-    let m = testMultipart.split("e");
-    console.log(m);
-    let testReadable = new Readable({
-        read(size){
-            return testMultipart.slice()
-        }
-    });
+    testKMP();
+
+    // let m = test1.split("*");
+    // // console.log(m);
+    // let i = 0;
+    // let testReadable = new Readable({
+    //     read(size){
+    //         if(i < m.length){
+    //             this.push(Buffer.from( m[i++]));
+    //             return m[i];
+    //         }else{
+    //             this.push(null);
+    //         }
+    //     }
+    // });
+
+    // const parser = new MultipartParser(rawboundary);
+    // const fields = new Map<string, string>();
+    // parser.on("data", (field:Field) => {
+    //     const f = fields.get(field.headers["Content-Disposition"]);
+    //     if(f){
+    //         fields.set(field.headers["Content-Disposition"], f+field.value.toString())
+    //     }else{
+    //         fields.set(field.headers["Content-Disposition"], field.value.toString());
+    //     }
+    //     console.log({headers:field.headers, value:field.value.toString()});
+    // });
+
+    // parser.on("end", () => {
+    //     console.log(fields);
+    // });
+
+    // testReadable.pipe(parser);
+    console.log({tmp:tmpdir()});
+
 }
 
+
+
+
+const LF = 10;
+const CR = 13;
+
+class MultipartParser2 extends Transform{
+    
+    part:Part;
+    boundary:string;
+    rawBoundary:string;
+    breakLine:string;
+    chunkCache:Buffer[];
+
+    headerKeyCache:string[];
+    headerValueCache:string[];
+
+    constructor(rawBoundary:string, options?:TransformOptions){
+        options = Object.assign(options??{}, {readableObjectMode:true});
+        super(options); 
+
+        this.part = "headerKey";
+        this.rawBoundary = rawBoundary;
+        this.boundary = "";
+        this.breakLine = "";
+        this.chunkCache = [];
+
+        this.headerKeyCache = [];
+        this.headerValueCache = [];
+    }
+
+    _transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback): void {
+        
+        // console.log({chunk:chunk.toString()});
+                    
+        if(this.boundary === ""){
+            
+            const startBoundary= "--"+this.rawBoundary;
+            const firstBreakLineChar = String.fromCharCode(chunk[startBoundary.length]);
+            const secondBreakLineChar =  String.fromCharCode(chunk[startBoundary.length+1]);
+
+            if(firstBreakLineChar === "\n"){
+                this.breakLine = "\n";
+            }else if(firstBreakLineChar === "\r"){
+        
+                if(secondBreakLineChar ===  "\n"){
+                    this.breakLine = "\r\n";
+                }else{
+                    this.breakLine = "\r";
+                }
+            }
+        
+            if(this.breakLine === ""){
+                console.log("multipart disposed");
+                this.part = "end";
+            }
+        
+            this.boundary = this.breakLine + startBoundary;
+            chunk = chunk.subarray(this.boundary.length);
+        }
+
+
+        for(let i = 0; i < chunk.length; i++){
+            
+
+
+        }
+        // console.log({part:this.currentPart});
+    }
+}

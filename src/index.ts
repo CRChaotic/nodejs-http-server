@@ -10,6 +10,8 @@ import { Context, Middleware, Request, Response } from "./types";
 import resovleMultipartFormData from "./middlewares/resolveMultipartFormData";
 import queryString from "node:querystring";
 import isJSON from "./utils/isJSON";
+import { testMultipartParser } from "./MultipartParser";
+import resolveURLEncodedFormData from "./middlewares/resolveURLEncodedFormData";
 
 
 type Callback = (
@@ -67,18 +69,8 @@ function addRoute(method:Method, path:string, callback:Callback){
 }
 
 addRoute("POST", "/form", (req, res) => {
-    // console.log(req.headers);
-    let body = "";
-    req.on("data", (chunk) => {
-        body += chunk;
-    });
-
-    req.on("end", () => {
-        const form = resolveURLEncodedFormData(body);
-        console.log(form);
-        res.send(form);
-    })
-   
+    console.log("resovled form:",req.form);
+    res.send(req.form);
 });
 
 addRoute("GET", "/math/{id}", (req, res) => {
@@ -112,7 +104,7 @@ addRoute("GET", "/*", (req, res) => {
 });
 
 
-function resolveURLEncodedFormData(body:string){
+function parseURLEncodedFormData(body:string){
 
     const form:{[k:string]:any} = {};
 
@@ -291,6 +283,7 @@ const pipeLine = Pipeline<Context>(
     sendFile(),
     send(),
     download(),
+    resolveURLEncodedFormData(),
     resovleMultipartFormData(),
     staticAssets("../../build"),
     // get(),
@@ -311,3 +304,5 @@ const app = http.createServer(async (req, res) => {
 });
 
 app.listen(port);
+
+testMultipartParser();

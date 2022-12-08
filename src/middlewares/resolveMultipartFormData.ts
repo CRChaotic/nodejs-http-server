@@ -1,4 +1,4 @@
-import parseMultiPart from "../parseMultipart";
+import parseMultiPart from "../utils/parseMultipart";
 import { Context, Middleware } from "../types";
 
 type Fields = {
