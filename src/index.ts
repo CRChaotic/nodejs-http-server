@@ -94,13 +94,13 @@ addRoute("POST", "/multipart", (req, res) => {
     const multipart = req.multipart;
     const {file} = multipart.files;
 
-    // console.log(multipart);
-    // res.end();
-    writeFile(`./upload/${file.filename}`, file.value, (err) => {
-        if (err) throw err;
-        console.log('The file has been saved!');
-        res.send({fields:multipart.fields, filename:file.filename, size:file.value.length}, 201);
-    });
+    console.log(multipart);
+    res.end();
+    // writeFile(`./upload/${file.filename}`, file.value, (err) => {
+    //     if (err) throw err;
+    //     console.log('The file has been saved!');
+    //     res.send({fields:multipart.fields, filename:file.filename, size:file.value.length}, 201);
+    // });
 
 });
 

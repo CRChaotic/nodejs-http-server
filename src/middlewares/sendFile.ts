@@ -24,23 +24,34 @@ ContentType.set("json", "application/json");
 
 function sendFile(){
 
-    const run:Middleware<Context> =  async ({res}, next) => {
+    const run:Middleware<Context> =  async ({req, res}, next) => {
 
         const sendFile = async(filepath:string, type?:string) => {
 
-            const { size } = await stat(filepath);
-            const data = createReadStream(filepath);
-            data.on("error", (err) => {
-                console.log("[ERROR] Middleware<sendFile> "+err.message);
-            });
+            const { size, mtime } = await stat(filepath);
             const suffix = path.extname(filepath).slice(1);
 
-            res.statusCode = 200;
             res.setHeader("Content-Length", size);
             const contentType = type??ContentType.get(suffix)??"application/octet-stream";
             res.setHeader("Content-Type", contentType);
+            res.setHeader("Last-Modified", mtime.toUTCString());
+            
+            if(!res.hasHeader("Cache-Control")){
+                res.setHeader("Cache-Control", "no-cache");
+            }
 
-            data.pipe(res);
+            if(req.headers["if-modified-since"] && mtime.toUTCString() === req.headers["if-modified-since"] && !req.headers["cache-control"]){
+                res.statusCode = 304;
+                res.end();
+            }else{
+                const data = createReadStream(filepath);
+                data.on("error", (err) => {
+                    console.log("[ERROR] Middleware<sendFile> "+err.message);
+                });
+    
+                res.statusCode = 200;
+                data.pipe(res);
+            }
         };
 
         res.sendFile = sendFile;
