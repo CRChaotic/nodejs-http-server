@@ -10,8 +10,8 @@ import { Context, Middleware, Request, Response } from "./types";
 import resovleMultipartFormData from "./middlewares/resolveMultipartFormData";
 import queryString from "node:querystring";
 import isJSON from "./utils/isJSON";
-import { testMultipartParser } from "./MultipartParser";
 import resolveURLEncodedFormData from "./middlewares/resolveURLEncodedFormData";
+import cookies from "./middlewares/cookies";
 
 
 type Callback = (
@@ -38,7 +38,7 @@ const port = 8080;
 
 function addRoute(method:Method, path:string, callback:Callback){
 
-    const regExp = new RegExp("^"+path.replace(/{(\w+)}/g, "(?<$1>[^/]+)")+"$");
+    const regExp = new RegExp("^"+path.replace(/:([^/]+)/g, "(?<$1>[^/]+)")+"$");
 
     console.info("[INFO] Add route:", {path, regExp});
 
@@ -73,15 +73,20 @@ addRoute("POST", "/form", (req, res) => {
     res.send(req.form);
 });
 
-addRoute("GET", "/math/{id}", (req, res) => {
+addRoute("GET", "/math/:id/suffix", (req, res) => {
     // res.sendFile("../server/build/index.html");
+    console.log(req.cookies);
+    res.setHeader("Content-Security-Policy", " default-src 'self'; style-src 'unsafe-inline'");
+    res.setHeader('Set-Cookie', ["SESSIONID="+Math.random()*100+"; path=/; samesite=strict; HttpOnly"]);
+    res.setHeader('Set-Cookie', ["S="+Math.random()*100+"; path=/; samesite=strict; HttpOnly"]);
+
     console.log({params:req.params, queries:req.queries});
     res.send({params:req.params, queries:req.queries});
 });
 
 
 addRoute("GET", "/download", (req, res) => {
-    res.download({filepath:path.resolve("./upload/v.mp4")});
+    res.download({filepath:path.resolve("./upload/str.c")});
 });
 
 addRoute("POST", "/multipart", (req, res) => {
@@ -100,51 +105,15 @@ addRoute("POST", "/multipart", (req, res) => {
 });
 
 addRoute("GET", "/*", (req, res) => {
-    res.send("<h1>404</h1>", 404);
+    res.statusCode = 404;
+    res.setHeader("Content-Type", "text/html");
+    res.write("<h1>404</h1>");
+    res.end();
 });
 
-
-function parseURLEncodedFormData(body:string){
-
-    const form:{[k:string]:any} = {};
-
-    body.split("&").forEach((pair) => {
-
-        let [key, value] = pair.split("=").map(decodeURIComponent);
-
-        if(isJSON(value)){
-            value = JSON.parse(value);
-        }
-
-        const matched = key.match(/^\s*(?<fieldName>\w+)\s*\[(?<prop>[\w-]*)\]\s*$/);
-        if(matched){
-
-            const fieldName = matched.groups?.fieldName.trim();
-            const prop = matched.groups?.prop;
-            if(fieldName != null && fieldName !== ""){
-
-                if(!form[fieldName]){
-                    form[fieldName] = {};
-                }
-
-                if(prop == null){
-                    form[fieldName] = value;
-                }else if(prop === ""){
-                    const index = Object.keys(form[fieldName]).length;
-                    form[fieldName][index] = value;
-                }else if(typeof prop === "string"){
-                    form[fieldName][prop] = value;
-                }
-            }
-            
-        }else{
-            form[key] = value;
-        }
-
-    });
-
-    return form;
-}
+addRoute("GET", "/redirect", (req, res) => {
+    res.redirect("https://www.bing.com");
+});
 
 function route(){
 
@@ -209,6 +178,7 @@ function route(){
 
             res.statusCode = 404;
             const defaultCallback:Callback = (req, res) => {
+                res.setHeader("Content-Type", "text/html");
                 res.write("<h1>Oops route does not exist<h1>");
                 res.end();
             };
@@ -219,59 +189,19 @@ function route(){
         req.queries = queries;
         req.params = params;
         route.callback(req, res);
-        console.log("router!");
 
     }
 
     return run;
 }
 
+function allowFrame(allow = false){
 
-function get(){
-
-    const run:Middleware<Context> = ({req, res}, next) => {
-
-        let hasRoute = false;
-
-        if(req.method === "GET"){
-
-            const url = new URL(req.url??"/", `http://${req.headers.host}`);
-            const path = url.pathname;
-            const queries = queryString.parse(url.search.slice(1));
-
-            const route =  GetRoute.get(path);
-
-            if(route){
-                req.queries = queries;
-                req.params = {};
-
-                route.callback(req, res);
-
-                hasRoute = true;
-            }else{
-
-                for(let relativeRoute of GetRoute.values()){
-
-                    const matched = path.match(relativeRoute.regExp);
-
-                    if(matched){
-                        // console.log(matched);
-                        req.queries = queries;
-                        req.params = matched.groups;
-                        relativeRoute.callback(req, res);
-
-                        hasRoute = true;
-                        break;
-                    }
-
-                }
-            }
+    const run:Middleware<Context> = ({res}, next) => {
+        if(!allow){
+            res.setHeader("X-Frame-Options", "SAMEORIGIN");
         }
-
-        if(!hasRoute){
-            next();
-        }
-
+        next();
     };
 
     return run;
@@ -279,30 +209,44 @@ function get(){
 
 
 
+function redirect(){
+
+    const run:Middleware<Context> = ({res}, next) => {
+
+        res.redirect = (path:string) => {
+            res.statusCode = 301;
+            res.setHeader("Location", path);
+            res.end();
+        };
+
+        next();
+
+    };
+
+    return run;
+}
+
+
 const pipeLine = Pipeline<Context>(
+    allowFrame(),
+    cookies(),
+    redirect(),
     sendFile(),
     send(),
     download(),
     resolveURLEncodedFormData(),
     resovleMultipartFormData(),
     staticAssets("../../build"),
-    // get(),
-    // post(),
     route(),
     (ctx, next, error) => {
         console.log("handle error:",error);
     }
 );
 
-console.log(path.resolve("./build"))
-const app = http.createServer(async (req, res) => {
-
-    const url = new URL(req.url!, `http://${req.headers.host}`);
+const app = http.createServer((req, res) => {
 
     pipeLine.execute({req, res});
 
 });
 
 app.listen(port);
-
-testMultipartParser();
