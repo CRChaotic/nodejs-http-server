@@ -1,6 +1,4 @@
-import { writeFile } from "fs";
 import * as http from "http";
-import path from "path";
 import download from "./middlewares/download";
 import send from "./middlewares/send";
 import sendFile from "./middlewares/sendFile";
@@ -9,9 +7,11 @@ import Pipeline from "./Pipeline";
 import { Context, Middleware, Request, Response } from "./types";
 import resovleMultipartFormData from "./middlewares/resolveMultipartFormData";
 import queryString from "node:querystring";
-import isJSON from "./utils/isJSON";
 import resolveURLEncodedFormData from "./middlewares/resolveURLEncodedFormData";
 import cookies from "./middlewares/cookies";
+import redirect from "./middlewares/redirect";
+import secureFrame from "./middlewares/secureFrame";
+import secureTypeSniff from "./middlewares/secureTypeSniff";
 
 
 type Callback = (
@@ -74,9 +74,7 @@ addRoute("POST", "/form", (req, res) => {
 });
 
 addRoute("GET", "/math/:id/suffix", (req, res) => {
-    // res.sendFile("../server/build/index.html");
     console.log(req.cookies);
-    res.setHeader("Content-Security-Policy", " default-src 'self'; style-src 'unsafe-inline'");
     res.setHeader('Set-Cookie', ["SESSIONID="+Math.random()*100+"; path=/; samesite=strict; HttpOnly"]);
     res.setHeader('Set-Cookie', ["S="+Math.random()*100+"; path=/; samesite=strict; HttpOnly"]);
 
@@ -86,7 +84,7 @@ addRoute("GET", "/math/:id/suffix", (req, res) => {
 
 
 addRoute("GET", "/download", (req, res) => {
-    res.download({filepath:path.resolve("./upload/str.c")});
+    res.download({root:"upload", filename:"str.c"});
 });
 
 addRoute("POST", "/multipart", (req, res) => {
@@ -105,10 +103,7 @@ addRoute("POST", "/multipart", (req, res) => {
 });
 
 addRoute("GET", "/*", (req, res) => {
-    res.statusCode = 404;
-    res.setHeader("Content-Type", "text/html");
-    res.write("<h1>404</h1>");
-    res.end();
+    res.sendFile({root:"src/views", filename:"404.html"});
 });
 
 addRoute("GET", "/redirect", (req, res) => {
@@ -195,40 +190,72 @@ function route(){
     return run;
 }
 
-function allowFrame(allow = false){
+export type ContentSecurityPolicyDirectives = {
+    defaultSrc?: string[]
+    scriptSrc?: string[];
+    styleSrc?: string[]; 
+    imgSrc?: string[];
+    mediaSrc?: string[];
+    fontSrc?: string[];
+    frameAncestors?: string[]; 
+    frameSrc?: string[];
+    formAction?: string[];
+    objectSrc?: string[];
+    manifestSrc?:string[];
+    workSrc?: string[];
+    baseUri?: string[];
+    sandbox?: string[];
+}
 
-    const run:Middleware<Context> = ({res}, next) => {
-        if(!allow){
-            res.setHeader("X-Frame-Options", "SAMEORIGIN");
+function secureContent(contentSecurityPolicyDirectives:ContentSecurityPolicyDirectives={}){
+
+    const directives:string[] = [];
+
+    if(!contentSecurityPolicyDirectives.defaultSrc){
+        directives.push("default-src 'self'");
+    }
+    
+    for(let [directive, values] of Object.entries(contentSecurityPolicyDirectives)){
+        const hyphenPosition = Array.prototype.findIndex.call(directive, (char:string) => /[A-Z]/.test(char));
+        if(hyphenPosition !== -1){
+            directive = directive.slice(0, hyphenPosition) + "-" + directive.slice(hyphenPosition).toLocaleLowerCase();
         }
+        directives.push(directive + " " + values.join(" "));
+    }
+
+    const contentSecurityPolicyHeader = directives.join("; ");
+
+    const wrappedSetHeader = (setHeader:Function, getHeader:Function) => {
+        return function (name:string, value: string | number | readonly string[]):Response {
+            const newRes = setHeader.apply(this, [name, value]);
+   
+            const type:string|null = getHeader.apply(this, ["Content-Type"]);
+            if(type && type.includes("text/html")){
+                setHeader.apply(this, ["Content-Security-Policy", contentSecurityPolicyHeader]);
+            }
+
+            return newRes;
+        }
+    }
+
+    const run:Middleware<Context> = ({req, res}, next) => {
+
+        if(req.method === "GET"){
+            res.setHeader = wrappedSetHeader(res.setHeader, res.getHeader);
+        }
+        
         next();
     };
 
     return run;
 }
 
-
-
-function redirect(){
-
-    const run:Middleware<Context> = ({res}, next) => {
-
-        res.redirect = (path:string) => {
-            res.statusCode = 301;
-            res.setHeader("Location", path);
-            res.end();
-        };
-
-        next();
-
-    };
-
-    return run;
-}
 
 
 const pipeLine = Pipeline<Context>(
-    allowFrame(),
+    secureFrame(),
+    secureTypeSniff(),
+    secureContent({frameAncestors:["'self'"]}),
     cookies(),
     redirect(),
     sendFile(),
@@ -236,7 +263,7 @@ const pipeLine = Pipeline<Context>(
     download(),
     resolveURLEncodedFormData(),
     resovleMultipartFormData(),
-    staticAssets("../../build"),
+    staticAssets({root:"build"}),
     route(),
     (ctx, next, error) => {
         console.log("handle error:",error);

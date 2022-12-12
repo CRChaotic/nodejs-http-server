@@ -6,6 +6,11 @@
 # testing
 /coverage
 /upload
+/src/crossStringsKMP.ts
+/src/MultipartParser.ts
+/src/Request.ts
+/src/Response.ts
+/src/resolveHeaderValues.ts
 
 # production
 /build
