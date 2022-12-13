@@ -1,33 +1,44 @@
-import { Context, Next } from "../types";
+import { Context, Middleware } from "../types";
+
+type SendOptions = {
+    statusCode?:number, 
+    headers?:{[k:string]:string|number};
+}
 
 function send(){
 
-    const run = ({res}:Context, next:Next) => {
+    const run:Middleware<Context> = ({res}, next) => {
 
-        const send = (data:string|number|boolean|object, statusCode:number = 200, addictiveHeaders?:{[k:string]:string|number}) => {
+        const send = (data:string|number|boolean|object, {statusCode = 200, headers = {}}:SendOptions = {}) => {
+
             const dataType = typeof data;
-            const headers:{[k:string]:string|number} = {};
-            
+            let contentType:string = "";
             let chunk:Buffer|null = null;
 
             switch(dataType){
                 case "string":
                 case "number":
                 case "boolean":
-                    headers["Content-Type"] = "text/plain";
+                    contentType = "text/plain";
                     chunk = Buffer.from(String(data));
                     break;
                 case "object":
-                    headers["Content-Type"] = "application/json";
+                    contentType = "application/json";
                     chunk = Buffer.from(JSON.stringify(data));
                     break;
                 default:
                     throw TypeError("type of data must be one of string, number, boolean or object");
             }
 
-            headers["Content-Length"] = chunk.length;
-            res.writeHead(statusCode, Object.assign(headers, addictiveHeaders));
+            for(const [name, value] of Object.entries(headers)){
+                res.setHeader(name, value);
+            }
+
+            res.statusCode = statusCode;
+            res.setHeader("content-type", contentType);
+            res.setHeader("content-length", chunk.length);
             res.end(chunk);
+    
         }
         
         res.send = send;

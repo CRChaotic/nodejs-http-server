@@ -11,7 +11,7 @@ import resolveURLEncodedFormData from "./middlewares/resolveURLEncodedFormData";
 import cookies from "./middlewares/cookies";
 import redirect from "./middlewares/redirect";
 import secureFrame from "./middlewares/secureFrame";
-import secureTypeSniff from "./middlewares/secureTypeSniff";
+import secureContent from "./middlewares/secureContent";
 
 
 type Callback = (
@@ -84,7 +84,7 @@ addRoute("GET", "/math/:id/suffix", (req, res) => {
 
 
 addRoute("GET", "/download", (req, res) => {
-    res.download({root:"upload", filename:"str.c"});
+    res.download("upload", "V.mp4", {rename:"x"});
 });
 
 addRoute("POST", "/multipart", (req, res) => {
@@ -103,7 +103,7 @@ addRoute("POST", "/multipart", (req, res) => {
 });
 
 addRoute("GET", "/*", (req, res) => {
-    res.sendFile({root:"src/views", filename:"404.html"});
+    res.sendFile("src/views", "404.html");
 });
 
 addRoute("GET", "/redirect", (req, res) => {
@@ -173,7 +173,7 @@ function route(){
 
             res.statusCode = 404;
             const defaultCallback:Callback = (req, res) => {
-                res.setHeader("Content-Type", "text/html");
+                res.setHeader("content-type", "text/html");
                 res.write("<h1>Oops route does not exist<h1>");
                 res.end();
             };
@@ -190,79 +190,20 @@ function route(){
     return run;
 }
 
-export type ContentSecurityPolicyDirectives = {
-    defaultSrc?: string[]
-    scriptSrc?: string[];
-    styleSrc?: string[]; 
-    imgSrc?: string[];
-    mediaSrc?: string[];
-    fontSrc?: string[];
-    frameAncestors?: string[]; 
-    frameSrc?: string[];
-    formAction?: string[];
-    objectSrc?: string[];
-    manifestSrc?:string[];
-    workSrc?: string[];
-    baseUri?: string[];
-    sandbox?: string[];
-}
-
-function secureContent(contentSecurityPolicyDirectives:ContentSecurityPolicyDirectives={}){
-
-    const directives:string[] = [];
-
-    if(!contentSecurityPolicyDirectives.defaultSrc){
-        directives.push("default-src 'self'");
-    }
-    
-    for(let [directive, values] of Object.entries(contentSecurityPolicyDirectives)){
-        const hyphenPosition = Array.prototype.findIndex.call(directive, (char:string) => /[A-Z]/.test(char));
-        if(hyphenPosition !== -1){
-            directive = directive.slice(0, hyphenPosition) + "-" + directive.slice(hyphenPosition).toLocaleLowerCase();
-        }
-        directives.push(directive + " " + values.join(" "));
-    }
-
-    const contentSecurityPolicyHeader = directives.join("; ");
-
-    const wrappedSetHeader = (setHeader:Function, getHeader:Function) => {
-        return function (name:string, value: string | number | readonly string[]):Response {
-            const newRes = setHeader.apply(this, [name, value]);
-   
-            const type:string|null = getHeader.apply(this, ["Content-Type"]);
-            if(type && type.includes("text/html")){
-                setHeader.apply(this, ["Content-Security-Policy", contentSecurityPolicyHeader]);
-            }
-
-            return newRes;
-        }
-    }
-
-    const run:Middleware<Context> = ({req, res}, next) => {
-
-        if(req.method === "GET"){
-            res.setHeader = wrappedSetHeader(res.setHeader, res.getHeader);
-        }
-        
-        next();
-    };
-
-    return run;
-}
-
 
 
 const pipeLine = Pipeline<Context>(
     secureFrame(),
-    secureTypeSniff(),
-    secureContent({frameAncestors:["'self'"]}),
+    secureContent({frameAncestors:["'none'"]}),
+
     cookies(),
     redirect(),
     sendFile(),
     send(),
-    download(),
     resolveURLEncodedFormData(),
     resovleMultipartFormData(),
+
+    download(),
     staticAssets({root:"build"}),
     route(),
     (ctx, next, error) => {

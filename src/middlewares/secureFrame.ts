@@ -1,14 +1,16 @@
 import { Context, Middleware, Response } from "../types";
 
-function secureFrame(){
+type Strategy = "sameorigin"|"deny";
 
-    const wrappedSetHeader = (setHeader:Function, getHeader:Function) => {
+function secureFrame(strategy:Strategy = "sameorigin"){
+
+    const decorateSetHeader = (setHeader:Function, getHeader:Function) => {
         return function (name:string, value: string | number | readonly string[]):Response {
             const newRes:Response = setHeader.apply(this, [name, value]);
 
-            const type:string|null = getHeader.apply(this, ["Content-Type"]);
-            if(type && type.includes("text/html")){
-                setHeader.apply(this, ["X-Frame-Options", "SAMEORIGIN"]);
+            const type:string|null = getHeader.apply(this, ["content-type"]);
+            if(type && (type.includes("text/html") || type.includes("image/svg+xml"))){
+                setHeader.apply(this, ["x-frame-options", strategy]);
             }
 
             return newRes;
@@ -18,7 +20,7 @@ function secureFrame(){
     const run:Middleware<Context> = ({req, res}, next) => {
 
         if(req.method === "GET"){
-            res.setHeader = wrappedSetHeader(res.setHeader, res.getHeader);
+            res.setHeader = decorateSetHeader(res.setHeader, res.getHeader);
         }
         
         next();

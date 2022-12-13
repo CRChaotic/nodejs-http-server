@@ -3,7 +3,7 @@ import path from "path";
 import { Context, Middleware } from "../types";
 
 export type StaticAssetsOptions = {
-    root:string,
+    root?:string,
     maxAge?:number, 
     index?:string
 }
@@ -18,8 +18,13 @@ function staticAssets({root="public", index = "index.html", maxAge = 10}:StaticA
         const asolutePath = path.resolve(path.join(root, filename));
 
         if(req.method === "GET" && existsSync(asolutePath)){
-            res.setHeader("Cache-Control", `max-age=${maxAge}`);
-            res.sendFile({root, filename});
+
+            res.sendFile(root, filename, {
+                noSniff:false, 
+                headers:{
+                "cache-control":`max-age=${maxAge}`
+            }});
+
         }else{
             next();
         }
