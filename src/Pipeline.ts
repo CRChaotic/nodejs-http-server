@@ -28,37 +28,42 @@ function Pipeline<T>(...middlewares:Middleware<T>[]){
     const execute:Pipeline<T>["execute"] = (context:T) => {
 
         let preIndex = -1;
-        let exception:unknown = null;
+        let error:Error|undefined;
         
-        const run = (index:number) => {
+        const run = async (index:number) => {
 
             if(preIndex === index){
                 throw Error("next called multiple times");
             }
+            preIndex = index;
 
             let middleware:Middleware<T>|null = null;
-            if(!exception){
+            if(!error){
                 middleware = queue[index];
             }else{
                 middleware = exceptionQueue[index];
             }
 
-            if(middleware){
+            if(!error && middleware){
 
-                try{
-                    middleware(context, () => {
-                        run(index + 1);
-                    }, exception);
-                }catch(error){
-      
-                    if(exception || exceptionQueue.length === 0){
-                        throw error;
-                    }else{
-                        exception = error;
-                        run(0);
+                middleware(context, (err) => {
+                    if(err){
+                        error = err;
+                        index = -1;
                     }
-                }
 
+                    run(index + 1);
+                });
+
+            }else if(error && middleware){
+
+                middleware(context, (err) => {
+                    error = err;
+                    run(index + 1);
+                }, error);
+
+            }else if(error){
+                console.error("Unhandle error", error.message);
             }
         };
 

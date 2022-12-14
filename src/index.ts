@@ -17,7 +17,7 @@ import secureContent from "./middlewares/secureContent";
 type Callback = (
     req:Request,
     res:Response
-) => void; 
+) => Promise<void>|void; 
 
 type Route = {
     regExp:RegExp; 
@@ -30,8 +30,8 @@ const GetRoute = new Map<string, Route>();
 const PostRoute = new Map<string, Route>();
 const DeleteRoute = new Map<string, Route>();
 const PutRoute = new Map<string, Route>();
-const OptionsRoute = new Map<string, Route>();
 const HeadRoute = new Map<string, Route>();
+const OptionsRoute = new Map<string, Route>();
 const Fallback = new Map<Method, Callback>();
 const port = 8080;
 
@@ -60,8 +60,8 @@ function addRoute(method:Method, path:string, callback:Callback){
         case "PUT":
             PutRoute.set(path, {regExp, callback});
             break;
-        case "OPTIONS":
-            OptionsRoute.set(path, {regExp, callback});
+        case "HEAD":
+            HeadRoute.set(path, {regExp, callback});
             break;
         default:
             throw new Error("method must be one of get, post, put, delete, options or head");
@@ -84,7 +84,8 @@ addRoute("GET", "/math/:id/suffix", (req, res) => {
 
 
 addRoute("GET", "/download", (req, res) => {
-    res.download("upload", "V.mp4", {rename:"x"});
+    console.log({headers:req.headers});
+    res.download("upload", "str.c");
 });
 
 addRoute("POST", "/multipart", (req, res) => {
@@ -138,11 +139,6 @@ function route(){
                 break;
             default:
                 throw new Error("Middleware<route>: request method is not spported");
-        }
-
-        if(!routeMap){
-           next();
-           return;
         }
 
         const url = new URL(req.url??"/", `http://${req.headers.host}`);
@@ -206,9 +202,11 @@ const pipeLine = Pipeline<Context>(
     download(),
     staticAssets({root:"build"}),
     route(),
-    (ctx, next, error) => {
-        console.log("handle error:",error);
-    }
+    (ctx, next, error:Error) => {
+        console.log(error.message);
+        ctx.res.statusCode = 500;
+        ctx.res.end();
+    },
 );
 
 const app = http.createServer((req, res) => {
@@ -218,3 +216,9 @@ const app = http.createServer((req, res) => {
 });
 
 app.listen(port);
+
+const corsTest = http.createServer((req, res) => {
+    pipeLine.execute({req, res});
+});
+
+corsTest.listen(8081);

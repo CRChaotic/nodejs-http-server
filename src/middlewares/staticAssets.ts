@@ -4,12 +4,16 @@ import { Context, Middleware } from "../types";
 
 export type StaticAssetsOptions = {
     root?:string,
-    maxAge?:number, 
     index?:string
+    cacheControl?:(filename:string) => string;
 }
 
 //max age 10 for test
-function staticAssets({root="public", index = "index.html", maxAge = 10}:StaticAssetsOptions){
+function staticAssets({
+    root="public", 
+    index = "index.html", 
+    cacheControl = () => "no-cache"
+}:StaticAssetsOptions){
 
     const run:Middleware<Context> = ({req, res}, next) => {
 
@@ -22,8 +26,9 @@ function staticAssets({root="public", index = "index.html", maxAge = 10}:StaticA
             res.sendFile(root, filename, {
                 noSniff:false, 
                 headers:{
-                "cache-control":`max-age=${maxAge}`
-            }});
+                    "cache-control":cacheControl(filename)
+                }
+            });
 
         }else{
             next();
