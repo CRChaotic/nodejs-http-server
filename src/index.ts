@@ -3,7 +3,7 @@ import download from "./middlewares/download";
 import send from "./middlewares/send";
 import sendFile from "./middlewares/sendFile";
 import staticAssets from "./middlewares/staticAssets";
-import Pipeline, { PipelineBeta } from "./Pipeline";
+import Pipeline, { MiddlewareBeta, PipelineBeta } from "./Pipeline";
 import { Context, Middleware, Next, Request, Response } from "./types";
 import resovleMultipartFormData from "./middlewares/resolveMultipartFormData";
 import queryString from "node:querystring";
@@ -13,6 +13,7 @@ import redirect from "./middlewares/redirect";
 import secureFrame from "./middlewares/secureFrame";
 import secureContent from "./middlewares/secureContent";
 import secureOpener from "./middlewares/secureOpener";
+import Router from "./router/Router";
 
 
 type Callback = (
@@ -112,101 +113,12 @@ addRoute("GET", "/redirect", (req, res) => {
     res.redirect("https://www.bing.com");
 });
 
-function route(){
+const router = new Router();
+router.addRoute("GET", "/", (req, res) => {
+    res.end("Yo !");
+})
 
-    const run:Middleware<Context> = ({req, res}, next) => {
-
-        const method = req.method;
-        let routeMap:Map<string, Route>|null = null;
-
-        switch(method){
-            case "GET":
-                routeMap = GetRoute;
-                break;
-            case "POST":
-                routeMap = PostRoute;
-                break;
-            case "PUT":
-                routeMap = PutRoute;
-                break;
-            case "DELETE":
-                routeMap = DeleteRoute;
-                break;
-            case "OPTIONS":
-                routeMap = OptionsRoute;
-                break;
-            case "HEAD":
-                routeMap = HeadRoute;
-                break;
-            default:
-                throw new Error("Middleware<route>: request method is not spported");
-        }
-
-        const url = new URL(req.url??"/", `http://${req.headers.host}`);
-        const path = url.pathname;
-
-        let queries = queryString.parse(url.search.slice(1));
-        let params = {};
-        let route = routeMap.get(path);
-
-        //try out relative route
-        if(!route){
-            
-            for(let relativeRoute of routeMap.values()){
-
-                const matched = path.match(relativeRoute.regExp);
-    
-                if(matched && matched.groups){
-                    // console.log(matched);
-                    params = matched.groups;
-                    route = relativeRoute;
-                    break;
-                }
-            }
-        }
-
-        //fallback route
-        if(!route){
-
-            res.statusCode = 404;
-            const defaultCallback:Callback = (req, res) => {
-                res.setHeader("content-type", "text/html");
-                res.write("<h1>Oops route does not exist<h1>");
-                res.end();
-            };
-
-            route = {regExp:/\/\*/, callback:Fallback.get(method)??defaultCallback}
-        }
-
-        req.queries = queries;
-        req.params = params;
-        route.callback(req, res);
-
-    }
-
-    return run;
-}
-
-const pipeLine = Pipeline<Context>(
-    secureFrame(),
-    secureContent({directives:{frameAncestors:["'none'"]}}),
-
-    cookies(),
-    redirect(),
-    sendFile(),
-    send(),
-    resolveURLEncodedFormData(),
-    resovleMultipartFormData(),
-
-    download(),
-    staticAssets({root:"build"}),
-    route(),
-    (ctx, next, error) => {
-        console.error(error);
-        ctx.res.statusCode = 500;
-        ctx.res.end();
-    },
-);
+const pipeLine = new PipelineBeta<Context>([router], []);
 
 const app = http.createServer((req, res) => {
 
