@@ -1,6 +1,6 @@
 import { Context, Middleware, Request, Response } from "../types";
 
-export type ContentSecurityPolicyDirectives = {
+type ContentSecurityPolicyDirectives = {
     defaultSrc?: string[]
     scriptSrc?: string[];
     styleSrc?: string[]; 
@@ -17,9 +17,14 @@ export type ContentSecurityPolicyDirectives = {
     sandbox?: string[];
 }
 
-export type Filter = (request:Request, response:Response) => boolean;
+type SecureContentFilter = (request:Request, response:Response) => boolean;
 
-const defaultFilter:Filter =  (req, res) => {
+export type SecureContentOptions = {
+    directives?:ContentSecurityPolicyDirectives;
+    filter?:SecureContentFilter;
+}
+
+const defaultFilter:SecureContentFilter =  (req, res) => {
 
     const contentType:any = res.getHeader("content-type");
 
@@ -34,29 +39,26 @@ const defaultFilter:Filter =  (req, res) => {
 
 };
 
-function secureContent(
-    contentSecurityPolicyDirectives:ContentSecurityPolicyDirectives={}, 
-    filter:Filter = defaultFilter
-){
+function secureContent({directives = {}, filter = defaultFilter}:SecureContentOptions){
 
-    const directives:string[] = [];
+    const directiveList:string[] = [];
 
-    if(!contentSecurityPolicyDirectives.defaultSrc){
-        directives.push("default-src 'self'");
+    if(!directives.defaultSrc){
+        directiveList.push("default-src 'self'");
     }
     
-    for(let [directive, values] of Object.entries(contentSecurityPolicyDirectives)){
+    for(let [directive, values] of Object.entries(directives)){
         const hyphenPosition = Array.prototype.findIndex.call(directive, (char:string) => /[A-Z]/.test(char));
         if(hyphenPosition !== -1){
             directive = directive.slice(0, hyphenPosition) + "-" + directive.slice(hyphenPosition).toLocaleLowerCase();
         }
-        directives.push(directive + " " + values.join(" "));
+        directiveList.push(directive + " " + values.join(" "));
     }
 
-    const contentSecurityPolicyHeader = directives.join("; ");
+    const contentSecurityPolicyHeader = directiveList.join("; ");
 
     const decorateSetHeader = (setHeader:Function, req:Request, res:Response) => {
-        return function (name:string, value: string | number | readonly string[]):Response {
+        return function (this:Response, name:string, value: string | number | readonly string[]):Response {
 
             const newRes = setHeader.apply(this, [name, value]);
 

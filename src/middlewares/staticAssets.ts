@@ -24,7 +24,6 @@ function staticAssets({
         if(req.method === "GET" && existsSync(asolutePath)){
 
             res.sendFile(root, filename, {
-                noSniff:false, 
                 headers:{
                     "cache-control":cacheControl(filename)
                 }

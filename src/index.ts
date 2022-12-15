@@ -3,8 +3,8 @@ import download from "./middlewares/download";
 import send from "./middlewares/send";
 import sendFile from "./middlewares/sendFile";
 import staticAssets from "./middlewares/staticAssets";
-import Pipeline from "./Pipeline";
-import { Context, Middleware, Request, Response } from "./types";
+import Pipeline, { PipelineBeta } from "./Pipeline";
+import { Context, Middleware, Next, Request, Response } from "./types";
 import resovleMultipartFormData from "./middlewares/resolveMultipartFormData";
 import queryString from "node:querystring";
 import resolveURLEncodedFormData from "./middlewares/resolveURLEncodedFormData";
@@ -12,6 +12,7 @@ import cookies from "./middlewares/cookies";
 import redirect from "./middlewares/redirect";
 import secureFrame from "./middlewares/secureFrame";
 import secureContent from "./middlewares/secureContent";
+import secureOpener from "./middlewares/secureOpener";
 
 
 type Callback = (
@@ -186,11 +187,9 @@ function route(){
     return run;
 }
 
-
-
 const pipeLine = Pipeline<Context>(
     secureFrame(),
-    secureContent({frameAncestors:["'none'"]}),
+    secureContent({directives:{frameAncestors:["'none'"]}}),
 
     cookies(),
     redirect(),
@@ -202,8 +201,8 @@ const pipeLine = Pipeline<Context>(
     download(),
     staticAssets({root:"build"}),
     route(),
-    (ctx, next, error:Error) => {
-        console.log(error.message);
+    (ctx, next, error) => {
+        console.error(error);
         ctx.res.statusCode = 500;
         ctx.res.end();
     },
@@ -217,8 +216,8 @@ const app = http.createServer((req, res) => {
 
 app.listen(port);
 
-const corsTest = http.createServer((req, res) => {
-    pipeLine.execute({req, res});
-});
+// const corsTest = http.createServer((req, res) => {
+//     pipeLine.execute({req, res});
+// });
 
-corsTest.listen(8081);
+// corsTest.listen(8081);

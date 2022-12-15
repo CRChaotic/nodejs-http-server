@@ -5,7 +5,7 @@ type Strategy = "sameorigin"|"deny";
 function secureFrame(strategy:Strategy = "sameorigin"){
 
     const decorateSetHeader = (setHeader:Function, getHeader:Function) => {
-        return function (name:string, value: string | number | readonly string[]):Response {
+        return function (this:Response, name:string, value: string | number | readonly string[]):Response {
             const newRes:Response = setHeader.apply(this, [name, value]);
 
             const type:string|null = getHeader.apply(this, ["content-type"]);

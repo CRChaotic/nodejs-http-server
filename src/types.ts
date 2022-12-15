@@ -13,10 +13,10 @@ export type Context = {
     res:Response;
 }
 
-export type Next = (error?:Error) => void;
+export type Next = (error?:unknown) => void;
 
 export interface Middleware<T>{
-    (context:T, next:Next, error?:Error): Promise<void>|void;
+    (context:T, next:Next, error?:unknown): Promise<void>|void;
 }
 
 export type Pipeline<T> = {

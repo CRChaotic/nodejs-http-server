@@ -1,12 +1,11 @@
-import { Middleware, Pipeline } from "./types";
+import { Context, Middleware, Pipeline } from "./types";
 
 function Pipeline<T>(...middlewares:Middleware<T>[]){
 
     const queue:Middleware<T>[] = [];
     const exceptionQueue:Middleware<T>[] = [];
 
-    const classifiyMiddleware = (middlewares:Middleware<T>[]) => {
-
+    const push:Pipeline<T>["push"] = (...middlewares:Middleware<T>[]) => {
         middlewares.forEach((middleware) => {
 
             if(middleware.length < 3){
@@ -16,21 +15,16 @@ function Pipeline<T>(...middlewares:Middleware<T>[]){
             }
 
         });
-
-    }
-
-    classifiyMiddleware(middlewares);
-
-    const push:Pipeline<T>["push"] = (...middlewares:Middleware<T>[]) => {
-       classifiyMiddleware(middlewares);
     };
+
+    push(...middlewares);
 
     const execute:Pipeline<T>["execute"] = (context:T) => {
 
         let preIndex = -1;
-        let error:Error|undefined;
+        let error:unknown = null;
         
-        const run = async (index:number) => {
+        const run = (index:number) => {
 
             if(preIndex === index){
                 throw Error("next called multiple times");
@@ -63,7 +57,7 @@ function Pipeline<T>(...middlewares:Middleware<T>[]){
                 }, error);
 
             }else if(error){
-                console.error("Unhandle error", error.message);
+                console.error("Unhandle error ", error);
             }
         };
 
@@ -102,3 +96,77 @@ export default Pipeline;
 // );
 
 // pipeLineTest.execute({});
+
+export type Next = (error?:Error) => void;
+
+export interface MiddlewareBeta<T>{
+    handle: (context:T, next:Next) => Promise<void>|void;
+}
+
+export interface ErrorHandler<T>{
+    handle(error:Error, context:T, next:Next): Promise<void>|void;
+}
+
+export class PipelineBeta<T> {
+
+    #middlewares:MiddlewareBeta<T>[];
+    #errorhandlers:ErrorHandler<T>[];
+
+    constructor(middlewares:MiddlewareBeta<T>[], errorHandlers:ErrorHandler<T>[]){
+        this.#middlewares = middlewares;
+        this.#errorhandlers = errorHandlers;
+    }
+
+
+    push(middlewares:MiddlewareBeta<T>[]){
+        middlewares.forEach((middleware) => {
+            this.#middlewares.push(middleware);
+        });
+    }
+
+    pushErrorHandlers(errorHandlers:ErrorHandler<T>[]){
+        errorHandlers.forEach((errorHandler) => {
+            this.#errorhandlers.push(errorHandler);
+        });
+    }
+
+    execute(context:T){
+
+        let preIndex = -1;
+        
+        const run = (index:number, error?:Error) => {
+
+            if(preIndex === index){
+                throw Error("next() is called multiple times");
+            }
+            preIndex = index;
+
+            if(!error){
+
+                const middleware:MiddlewareBeta<T>|null = this.#middlewares[index];
+                middleware?.handle(context, (error) => {
+                    if(error){
+                        index = -1;
+                    }
+                    run(index + 1, error);
+                });
+
+            }else {
+                const errorHandler:ErrorHandler<T>|null = this.#errorhandlers[index];
+
+                if(!errorHandler){
+                    console.error("Unhandle error " + error);
+                }
+                errorHandler?.handle(error, context, (error) => {
+                    if(error){
+                        run(index + 1, error);
+                    }
+                });
+
+            }
+        };
+
+        run(0);
+    }
+
+}
