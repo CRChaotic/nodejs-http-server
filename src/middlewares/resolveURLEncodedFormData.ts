@@ -1,10 +1,16 @@
 import { Writable } from "node:stream";
-import { Context, Middleware } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
 import parseURLEncodedFormData from "../utils/parseURLEncoded";
 
 const MaxSizeRegExp = /^(?<size>\d+)(?<unit>K|M|G)?$/i;
 
-function resolveURLEncodedFormData(maxSize:number|string = "10M"){
+type ResovleURLEncodedFormDataOptions = {
+    maxSize?:number|string;
+}
+
+function resolveURLEncodedFormData({maxSize = "10M"}:ResovleURLEncodedFormDataOptions = {}):Middleware<Context>{
 
     let resolvedMaxSize = 0;
 
@@ -36,9 +42,10 @@ function resolveURLEncodedFormData(maxSize:number|string = "10M"){
         resolvedMaxSize = maxSize;
     }
 
-    const run:Middleware<Context> = ({req}, next) => {
+    const handle = (context:Context, next:Next) => {
+        const {request} = context;
 
-        if(req.method === "POST" && req.headers["content-type"] === "application/x-www-form-urlencoded"){
+        if(request.method === "POST" && request.headers["content-type"] === "application/x-www-form-urlencoded"){
 
             const body:Buffer[] = [];
             let size = 0;
@@ -55,20 +62,20 @@ function resolveURLEncodedFormData(maxSize:number|string = "10M"){
                 },
                 final(callback) {
                     const form = parseURLEncodedFormData(Buffer.concat(body).toString());
-                    req.form = form;
+                    request.form = form;
                     next();
                     callback();
                 },
             });
 
-            req.pipe(resolver);
+            request.pipe(resolver);
         }else{
             next();
         }
        
     }
 
-    return run;
+    return { handle };
 }
 
 export default resolveURLEncodedFormData;

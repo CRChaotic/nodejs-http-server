@@ -1,31 +1,33 @@
 import { existsSync } from "fs";
 import path from "path";
-import { Context, Middleware } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
 
 export type StaticAssetsOptions = {
-    root?:string,
-    index?:string
-    cacheControl?:(filename:string) => string;
+    root:string;
+    index?:string;
+    cacheControlFilter?:(filepath:string) => string;
 }
 
 //max age 10 for test
 function staticAssets({
-    root="public", 
+    root, 
     index = "index.html", 
-    cacheControl = () => "no-cache"
-}:StaticAssetsOptions){
+    cacheControlFilter = () => "no-cache"
+}:StaticAssetsOptions):Middleware<Context>{
 
-    const run:Middleware<Context> = ({req, res}, next) => {
+    const handle = ({request:req, response:res}:Context, next:Next) => {
 
         const url = new URL(req.url!, `http://${req.headers.host}`);
         const filename = url.pathname === "/" ? index:url.pathname;
-        const asolutePath = path.resolve(path.join(root, filename));
+        const filepath = path.resolve(path.join(root, filename));
 
-        if(req.method === "GET" && existsSync(asolutePath)){
+        if(req.method === "GET" && existsSync(filepath)){
 
-            res.sendFile(root, filename, {
+            res.sendFile(filepath, {
                 headers:{
-                    "cache-control":cacheControl(filename)
+                    "cache-control": cacheControlFilter(filepath)
                 }
             });
 
@@ -34,7 +36,7 @@ function staticAssets({
         }
     }
 
-    return run;
+    return { handle };
 }
 
 export default staticAssets;

@@ -1,13 +1,15 @@
-import { Context } from "../types";
 import queryString from "querystring";
-import { MiddlewareBeta, Next } from "../Pipeline";
-import { IncomingMessage, ServerResponse } from "http";
+import { Request } from "../Request";
+import { Response } from "../Response";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+import { Context } from "../Context";
 
 type Method = "GET"|"POST"|"PUT"|"DELETE"|"HEAD"|"OPTIONS";
 
 type RouterCallback = (
-    req:IncomingMessage,
-    res:ServerResponse
+    request: Request,
+    response: Response
 ) => Promise<void>|void; 
 
 type Route = {
@@ -15,13 +17,13 @@ type Route = {
     callback:RouterCallback;
 }
 
-function defaultCallback(req:IncomingMessage, res:ServerResponse){
+function defaultCallback(req:Request, res:Response){
     res.setHeader("content-type", "text/html");
     res.write("<h1>Oops route does not exist<h1>");
     res.end();
 }
 
-class Router implements MiddlewareBeta<Context>{
+class Router implements Middleware<Context>{
 
     #getRoute:Map<string, Route>;
     #postRoute:Map<string, Route>;
@@ -46,14 +48,14 @@ class Router implements MiddlewareBeta<Context>{
         return new RegExp("^"+path.replace(/:([^/]+)/g, "(?<$1>[^/]+)")+"$");
     }
 
-    addRoute(method:Method, path:string, callback:RouterCallback){
-
+    addRoute(method:Method, path:string, callback:RouterCallback): Router{
         if(path === "/*"){
             this.#fallback.set(method, callback);
-            return;
+            return this;
         }
 
         const regExp = Router.getPathRegExp(path);
+        console.info("[INFO] Add route:", {method, path, regExp});
     
         switch(method){
             case "GET":
@@ -74,11 +76,13 @@ class Router implements MiddlewareBeta<Context>{
             default:
                 throw new Error("method must be one of get, post, put, delete, options or head");
         }
+
+        return this;
     }
     
-    handle(context: Context, next: Next): void | Promise<void> {
-        const {req, res} = context;
-        const method = req.method;
+    async handle(context: Context, next: Next): Promise<void> {
+        const {request, response} = context;
+        const method = request.method;
         let routeMap:Map<string, Route>|null = null;
 
         switch(method){
@@ -104,7 +108,7 @@ class Router implements MiddlewareBeta<Context>{
                 throw new Error("Middleware<Router>: request method is not spported");
         }
 
-        const url = new URL(req.url??"/", `http://${req.headers.host}`);
+        const url = new URL(request.url??"/", `http://${request.headers.host}`);
         const path = url.pathname;
 
         let queries = queryString.parse(url.search.slice(1));
@@ -129,13 +133,28 @@ class Router implements MiddlewareBeta<Context>{
 
         //fallback route
         if(!route){
-            res.statusCode = 404;
+            response.statusCode = 404;
             route = {regExp:/\/\*/, callback:this.#fallback.get(method)??defaultCallback}
         }
 
-        req.queries = queries;
-        req.params = params;
-        route.callback(req, res);
+        Object.defineProperties(request, {
+            query:{
+                value:queries,
+                writable:false,
+                enumerable:true,
+            },
+            param:{
+                value:params,
+                writable:false,
+                enumerable:true
+            }
+        });
+         
+        try{
+            await route.callback(request, response);
+        }catch(error){
+            next(error);
+        }
     };
     
 }

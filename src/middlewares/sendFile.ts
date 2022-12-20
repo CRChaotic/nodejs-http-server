@@ -1,8 +1,10 @@
-import { createReadStream } from "fs";
 import { stat } from "fs/promises";
 import path from "path";
-import { ContentType } from "../ContentType";
-import { Context, Middleware} from "../types";
+import { MIMEType } from "../MIMEType";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+import { createReadStream } from "fs";
 
 export type SendFileOptions = {
     lastModified?:boolean;
@@ -10,16 +12,18 @@ export type SendFileOptions = {
     headers?:{
         [k:string]:string | number | readonly string[];
     };
+    statusCode?:number;
 }
 
 //TO DO range request
-function sendFile(fallbackContentType:string = "application/octet-stream"){
+function sendFile(fallbackMIMEType:string = "application/octet-stream"):Middleware<Context>{
 
-    const run:Middleware<Context> =  async ({req, res}, next) => {
+    const handle =  async (context:Context, next:Next) => {
+
+        const {request, response} = context;
 
         const sendFile = async (
-            root:string, 
-            filename:string, 
+            filepath:string, 
             {
                 lastModified = true, 
                 noSniff = true,
@@ -28,49 +32,55 @@ function sendFile(fallbackContentType:string = "application/octet-stream"){
         ) => {
 
             try{
-                const filepath = path.resolve(path.join(root, filename));
-                const { size, mtime } = await stat(filepath);
+                filepath = path.resolve(filepath);
+                const stats = await stat(filepath);
+                const mtime = stats.mtime;
+                const size = stats.size;
+                if(!stats.isFile()){
+                    next(new Error(filepath + " is not a file"));
+                    return;
+                }
                 const suffix = path.extname(filepath).slice(1);
     
-                res.setHeader("content-length", size);
-                const contentType = headers["content-type"]??ContentType.get(suffix)??fallbackContentType;
-                res.setHeader("content-type", contentType);
+                response.setHeader("content-length", size);
+                const contentType = headers["content-type"]??MIMEType.get(suffix)??fallbackMIMEType;
+                response.setHeader("content-type", contentType);
     
+                for(const [name, value] of Object.entries(headers)){
+                    response.setHeader(name, value);
+                }
+
                 if(lastModified){
-                    res.setHeader("last-modified", mtime.toUTCString());
+                    response.setHeader("last-modified", mtime.toUTCString());
                 }
     
                 if(noSniff){
-                    res.setHeader("x-content-type-options", "nosniff");
-                }
-    
-                for(const [name, value] of Object.entries(headers)){
-                    res.setHeader(name, value);
+                    response.setHeader("x-content-type-options", "nosniff");
                 }
     
                 if(
-                    req.headers["if-modified-since"] && 
-                    mtime.toUTCString() === req.headers["if-modified-since"] &&
-                    !req.headers["cache-control"]
+                    request.headers["if-modified-since"] && 
+                    mtime.toUTCString() === request.headers["if-modified-since"] &&
+                    !request.headers["cache-control"]
                 ){
-                    res.statusCode = 304;
-                    res.end();
+                    response.statusCode = 304;
+                    response.end();
                 }else{
+                    response.statusCode = response.statusCode === 200 ? 200:response.statusCode;
                     const data = createReadStream(filepath);
-                    res.statusCode = 200;
-                    data.pipe(res);
+                    data.pipe(response);
                 }      
-            }catch(err){
-                next(err);
+            }catch(error){
+                next(error);
             }
             
         };
 
-        res.sendFile = sendFile;
+        response.sendFile = sendFile;
         next();
     }
 
-    return run;
+    return { handle };
 }
 
 export default sendFile;

@@ -1,5 +1,7 @@
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
 import parseMultiPart from "../utils/parseMultipart";
-import { Context, Middleware } from "../types";
 
 type Fields = {
     [k:string]:{
@@ -15,9 +17,10 @@ type Files = {
     }
 }
 
-function resolveMultipartFormData(){
+function resolveMultipartFormData():Middleware<Context>{
 
-    const run:Middleware<Context> = ({req, res}, next) => {
+    const handle = (context:Context, next:Next) => {
+        const {request:req, response:res } = context;
 
         if(req.method !== "POST"){
             next();
@@ -83,7 +86,7 @@ function resolveMultipartFormData(){
         
     };
 
-    return run;
+    return { handle };
 }
 
 export default resolveMultipartFormData;

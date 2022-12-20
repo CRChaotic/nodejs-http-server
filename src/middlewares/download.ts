@@ -1,27 +1,30 @@
-import { Context, Middleware } from "../types";
+import path from "path";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+
 
 export type DownloadOptions = {
     rename?:string;
 }
 
-function download(){
+function download():Middleware<Context>{
 
-    const run:Middleware<Context> = ({res}, next) => {
+    const handle = ({response}:Context, next:Next) => {
 
-        const downloadData = async (root:string, filename:string, { rename }:DownloadOptions = {}) => {
-            res.sendFile(root, filename, { 
-                lastModified:false, 
+        const downloadData = async (filepath:string, { rename }:DownloadOptions = {}) => {
+            response.sendFile(filepath, { 
                 noSniff:false, 
                 headers:{
-                "content-disposition":`attachment; filename=${rename??filename}`
+                "content-disposition":`attachment; filename=${rename??path.basename(filepath)}`
             }});
         };
 
-        res.download = downloadData;
+        response.download = downloadData;
         next();
     };
 
-    return run;
+    return { handle };
 }
 
 export default download;

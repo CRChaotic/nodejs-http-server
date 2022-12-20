@@ -1,4 +1,9 @@
-import { Context, Middleware, Request, Response } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+import { Request } from "../Request";
+import { Response } from "../Response";
+
 
 type ContentSecurityPolicyDirectives = {
     defaultSrc?: string[]
@@ -24,7 +29,7 @@ export type SecureContentOptions = {
     filter?:SecureContentFilter;
 }
 
-const defaultFilter:SecureContentFilter =  (req, res) => {
+const defaultFilter:SecureContentFilter =  (req:Request, res:Response) => {
 
     const contentType:any = res.getHeader("content-type");
 
@@ -39,7 +44,7 @@ const defaultFilter:SecureContentFilter =  (req, res) => {
 
 };
 
-function secureContent({directives = {}, filter = defaultFilter}:SecureContentOptions){
+function secureContent({directives = {}, filter = defaultFilter}:SecureContentOptions = {}):Middleware<Context>{
 
     const directiveList:string[] = [];
 
@@ -70,15 +75,15 @@ function secureContent({directives = {}, filter = defaultFilter}:SecureContentOp
         }
     }
 
-    const run:Middleware<Context> = ({req, res}, next) => {
-        if(req.method === "GET"){
-            res.setHeader = decorateSetHeader(res.setHeader, req, res);
+    const handle = ({request, response}:Context, next:Next) => {
+        if(request.method === "GET"){
+            response.setHeader = decorateSetHeader(response.setHeader, request, response);
         }
         
         next();
     };
 
-    return run;
+    return { handle };
 }
 
 export default secureContent;

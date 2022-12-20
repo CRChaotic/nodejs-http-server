@@ -1,33 +1,31 @@
-import { Context, Middleware } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
 
-function redirect(){
+function redirect():Middleware<Context>{
 
-    const run:Middleware<Context> = ({req, res}, next) => {
+    const handle = ({request, response}:Context, next:Next) => {
 
-        res.redirect = (path:string) => {
+        response.redirect = (path:string, statusCode?:number) => {
 
-            switch(req.method){
-                case "POST":
-                case "PUT":
-                case "DELETE":
-                    res.statusCode = 303;
-                    break;
-                case "GET":
-                    res.statusCode = 308;
-                    break;
-                default:
-                    throw new Error("only request method is one of POST, PUT, DELETE and GET can be redirected");
+            if(statusCode == null){
+                response.statusCode = 303;
+            }else if(Number.isInteger(statusCode) && statusCode !== 304 && statusCode > 300 && statusCode < 308){
+                response.statusCode = statusCode;
+            }else{
+                next(new Error("redirect status code should be between 301 - 308"));
+                return;
             }
 
-            res.setHeader("Location", path);
-            res.end();
+            response.setHeader("Location", path);
+            response.end();
         };
 
         next();
 
     };
 
-    return run;
+    return { handle };
 }
 
 export default redirect;

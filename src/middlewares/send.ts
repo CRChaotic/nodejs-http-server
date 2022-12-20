@@ -1,13 +1,18 @@
-import { Context, Middleware } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+
 
 type SendOptions = {
     statusCode?:number, 
     headers?:{[k:string]:string|number};
 }
 
-function send(){
+function send():Middleware<Context>{
 
-    const run:Middleware<Context> = ({res}, next) => {
+    const handle = (context:Context, next:Next) => {
+        
+        const { response } = context;
 
         const send = (data:string|number|boolean|object, {statusCode = 200, headers = {}}:SendOptions = {}) => {
 
@@ -27,26 +32,27 @@ function send(){
                     chunk = Buffer.from(JSON.stringify(data));
                     break;
                 default:
-                    throw TypeError("type of data must be one of string, number, boolean or object");
+                    next(new TypeError("type of data must be one of string, number, boolean or object"));
+                    return;
             }
 
             for(const [name, value] of Object.entries(headers)){
-                res.setHeader(name, value);
+                response.setHeader(name, value);
             }
 
-            res.statusCode = statusCode;
-            res.setHeader("content-type", contentType);
-            res.setHeader("content-length", chunk.length);
-            res.end(chunk);
+            response.statusCode = statusCode;
+            response.setHeader("content-type", contentType);
+            response.setHeader("content-length", chunk.length);
+            response.end(chunk);
     
         }
         
-        res.send = send;
+        response.send = send;
         next();
 
     }
 
-    return run;
+    return { handle };
 }
 
 export default send;

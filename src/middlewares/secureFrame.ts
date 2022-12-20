@@ -1,8 +1,12 @@
-import { Context, Middleware, Response } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+import { Response } from "../Response";
+
 
 type Strategy = "sameorigin"|"deny";
 
-function secureFrame(strategy:Strategy = "sameorigin"){
+function secureFrame(strategy:Strategy = "sameorigin"):Middleware<Context>{
 
     const decorateSetHeader = (setHeader:Function, getHeader:Function) => {
         return function (this:Response, name:string, value: string | number | readonly string[]):Response {
@@ -17,16 +21,16 @@ function secureFrame(strategy:Strategy = "sameorigin"){
         }
     };
 
-    const run:Middleware<Context> = ({req, res}, next) => {
+    const handle = ({request, response}:Context, next:Next) => {
 
-        if(req.method === "GET"){
-            res.setHeader = decorateSetHeader(res.setHeader, res.getHeader);
+        if(request.method === "GET"){
+            response.setHeader = decorateSetHeader(response.setHeader, response.getHeader);
         }
         
         next();
     };
 
-    return run;
+    return { handle };
 }
 
 export default secureFrame;

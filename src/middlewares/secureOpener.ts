@@ -1,4 +1,9 @@
-import { Context, Middleware, Request, Response } from "../types";
+import { Context } from "../Context";
+import { Middleware } from "../Middleware";
+import { Next } from "../Next";
+import { Request } from "../Request";
+import { Response } from "../Response";
+
 
 type CrossOriginOpenerPolicy = 
 |"unsafe-none"
@@ -12,7 +17,7 @@ export type SecureOpenerOptions = {
     filter?:SecureOpenerFilter;
 }
 
-const defaultFilter:SecureOpenerFilter = (req, res) => {
+const defaultFilter:SecureOpenerFilter = (req:Request, res:Response) => {
 
     const contentType:any = res.getHeader("content-type");
 
@@ -26,7 +31,10 @@ const defaultFilter:SecureOpenerFilter = (req, res) => {
     }
 }
 
-function secureOpener({strategy= "same-origin-allow-popups", filter = defaultFilter}:SecureOpenerOptions = {}){
+function secureOpener({
+    strategy= "same-origin-allow-popups", 
+    filter = defaultFilter
+}:SecureOpenerOptions = {}):Middleware<Context>{
 
     const decorateSetHeader = (setHeader:Function, req:Request, res:Response) => {
         return function (this:Response, name:string, value: string | number | readonly string[]):Response {
@@ -41,15 +49,15 @@ function secureOpener({strategy= "same-origin-allow-popups", filter = defaultFil
         }
     }
     
-    const run:Middleware<Context> = ({req, res}, next) => {
-        if(req.method === "GET"){
-            res.setHeader = decorateSetHeader(res.setHeader , req, res);
+    const handle = ({request, response}:Context, next:Next) => {
+        if(request.method === "GET"){
+            response.setHeader = decorateSetHeader(response.setHeader ,request, response);
         }
 
         next();
     };
 
-    return run;
+    return { handle };
 }
 
 export default secureOpener;
