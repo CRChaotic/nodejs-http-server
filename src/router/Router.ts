@@ -5,7 +5,7 @@ import { Middleware } from "../Middleware";
 import { Next } from "../Next";
 import { Context } from "../Context";
 
-type Method = "GET"|"POST"|"PUT"|"DELETE"|"HEAD"|"OPTIONS";
+type Method = "GET"|"POST"|"PUT"|"DELETE"|"PATCH"|"HEAD"|"OPTIONS"|"CONNECT";
 
 type RouterCallback = (
     request: Request,
@@ -23,108 +23,89 @@ function defaultCallback(req:Request, res:Response){
     res.end();
 }
 
+const DEFAULT_ACCEPT_METHOD: Method[] = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+
+export type RouterOptions = {
+    fallbackPath?:string;
+    caseSensitive?:boolean;
+    acceptMethod?:Method[];
+}
+
 class Router implements Middleware<Context>{
 
-    #getRoute:Map<string, Route>;
-    #postRoute:Map<string, Route>;
-    #deleteRoute:Map<string, Route>;
-    #putRoute:Map<string, Route>;
+    #routeMap:Map<Method, Map<string, Route>>;
     #fallback:Map<Method, RouterCallback>;
-    #optionsRoute:Map<string, Route>;
-    #headRoute:Map<string, Route>;
+    #fallbackPath:string;
+    #caseSensitive:boolean;
 
-    constructor(){
-        this.#getRoute = new Map();
-        this.#postRoute = new Map();
-        this.#deleteRoute = new Map();
-        this.#putRoute = new Map();
+    constructor({fallbackPath = "/*", caseSensitive = true, acceptMethod = DEFAULT_ACCEPT_METHOD}:RouterOptions = {}){
+
         this.#fallback = new Map();
-        this.#optionsRoute = new Map();
-        this.#headRoute = new Map();
-        this.#fallback = new Map();
+        this.#fallbackPath = fallbackPath;
+        this.#routeMap = new Map();
+        this.#caseSensitive = caseSensitive;
+
+        acceptMethod.forEach((method) => {
+            this.#routeMap.set(method, new Map());
+        });
     }
 
-    static getPathRegExp(path:string){
-        return new RegExp("^"+path.replace(/:([^/]+)/g, "(?<$1>[^/]+)")+"$");
+    getPathRegExp(path:string){
+        if(this.#caseSensitive){
+            return new RegExp("^"+path.replace(/:([^/]+)/g, "(?<$1>[^/]+)")+"$");
+        }else{
+            return new RegExp("^"+path.replace(/:([^/]+)/g, "(?<$1>[^/]+)")+"$", "i");
+        }
     }
 
     addRoute(method:Method, path:string, callback:RouterCallback): Router{
-        if(path === "/*"){
+        if(path === this.#fallbackPath){
             this.#fallback.set(method, callback);
             return this;
         }
 
-        const regExp = Router.getPathRegExp(path);
+        const regExp = this.getPathRegExp(path);
         console.info("[INFO] Add route:", {method, path, regExp});
-    
-        switch(method){
-            case "GET":
-                this.#getRoute.set(path, {regExp, callback});
-                break;
-            case "POST":
-                this.#postRoute.set(path, {regExp, callback});
-                break;
-            case "DELETE":
-                this.#deleteRoute.set(path, {regExp, callback});
-                break;
-            case "PUT":
-                this.#putRoute.set(path, {regExp, callback});
-                break;
-            case "HEAD":
-                this.#headRoute.set(path, {regExp, callback});
-                break;
-            default:
-                throw new Error("method must be one of get, post, put, delete, options or head");
+
+        const specificRouteMap = this.#routeMap.get(method);
+        if(specificRouteMap != null){
+            specificRouteMap.set(path, {callback, regExp})
+        }else{
+            throw new Error("router does not support method "+ method);
         }
 
         return this;
     }
-    
+
     async handle(context: Context, next: Next): Promise<void> {
         const {request, response} = context;
-        const method = request.method;
-        let routeMap:Map<string, Route>|null = null;
+        const method = request.method as Method;
 
-        switch(method){
-            case "GET":
-                routeMap = this.#getRoute;
-                break;
-            case "POST":
-                routeMap = this.#postRoute;
-                break;
-            case "PUT":
-                routeMap = this.#putRoute;
-                break;
-            case "DELETE":
-                routeMap = this.#deleteRoute;
-                break;
-            case "OPTIONS":
-                routeMap = this.#optionsRoute;
-                break;
-            case "HEAD":
-                routeMap = this.#headRoute;
-                break;
-            default:
-                throw new Error("Middleware<Router>: request method is not spported");
+        const specificRouteMap:Map<string, Route>|undefined = this.#routeMap.get(method);
+        if(specificRouteMap == null){
+            next(new Error("Router does not support method " + method));
+            return;
         }
 
         const url = new URL(request.url??"/", `http://${request.headers.host}`);
         const path = url.pathname;
 
         let queries = queryString.parse(url.search.slice(1));
-        let params = {};
-        let route = routeMap.get(path);
+        let params:{[k:string]:string} = {};
 
+        let route = specificRouteMap.get(path);
         //try out relative route
         if(!route){
             
-            for(let relativeRoute of routeMap.values()){
+            for(let relativeRoute of specificRouteMap.values()){
 
                 const matched = path.match(relativeRoute.regExp);
     
-                if(matched && matched.groups){
+                if(matched){
                     // console.log(matched);
-                    params = matched.groups;
+                    if(matched.groups){
+                        params = matched.groups;
+                    }
                     route = relativeRoute;
                     break;
                 }
@@ -134,16 +115,16 @@ class Router implements Middleware<Context>{
         //fallback route
         if(!route){
             response.statusCode = 404;
-            route = {regExp:/\/\*/, callback:this.#fallback.get(method)??defaultCallback}
+            route = {regExp:/\/\*/, callback:this.#fallback.get(method)??defaultCallback};
         }
 
         Object.defineProperties(request, {
-            query:{
+            queries:{
                 value:queries,
                 writable:false,
                 enumerable:true,
             },
-            param:{
+            params:{
                 value:params,
                 writable:false,
                 enumerable:true

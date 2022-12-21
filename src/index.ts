@@ -48,7 +48,7 @@ router.addRoute("GET", "/cookie", async (req, res) => {
     // });
 }).addRoute("GET", "/math/:id/suffix", (req, res) => {
 
-    res.send({param:req.param, query:req.query});
+    res.send({params:req.params, queries:req.queries});
 }).addRoute("GET", "/redirect", (req, res) => {
     res.redirect("https://www.bing.com");
 }).addRoute("GET", "/download", (req, res) => {
@@ -95,7 +95,6 @@ router.addRoute("GET", "/cookie", async (req, res) => {
         res.send(session);
     }else{
         res.redirect("/login");
-
     }
 });
 
@@ -112,7 +111,7 @@ const pipeLine = new Pipeline<Context>([
     secureFrame(),
     secureContent({directives:{frameAncestors:["'none'"]}}),
     secureOpener(),
-    secureTransport({maxAge:10}),
+    secureTransport({maxAge:60}),
     session("__Host-SID", InMemorySessionStorage()),
     staticAssets({root:"build"}),
     router

@@ -26,6 +26,7 @@ type SecureContentFilter = (request:Request, response:Response) => boolean;
 
 export type SecureContentOptions = {
     directives?:ContentSecurityPolicyDirectives;
+    upgradeInsecureRequests?:boolean;
     filter?:SecureContentFilter;
 }
 
@@ -34,7 +35,7 @@ const defaultFilter:SecureContentFilter =  (req:Request, res:Response) => {
     const contentType:any = res.getHeader("content-type");
 
     if(
-        contentType && typeof contentType === "string" &&
+        typeof contentType === "string" &&
         (contentType.includes(("text/html")) || contentType.includes("image/svg+xml"))
     ){
         return true;
@@ -44,12 +45,20 @@ const defaultFilter:SecureContentFilter =  (req:Request, res:Response) => {
 
 };
 
-function secureContent({directives = {}, filter = defaultFilter}:SecureContentOptions = {}):Middleware<Context>{
+function secureContent({
+    directives = {}, 
+    upgradeInsecureRequests = true, 
+    filter = defaultFilter
+}:SecureContentOptions = {}):Middleware<Context>{
 
     const directiveList:string[] = [];
 
     if(!directives.defaultSrc){
         directiveList.push("default-src 'self'");
+    }
+
+    if(upgradeInsecureRequests){
+        directiveList.push("upgrade-insecure-requests");
     }
     
     for(let [directive, values] of Object.entries(directives)){
@@ -57,6 +66,7 @@ function secureContent({directives = {}, filter = defaultFilter}:SecureContentOp
         if(hyphenPosition !== -1){
             directive = directive.slice(0, hyphenPosition) + "-" + directive.slice(hyphenPosition).toLocaleLowerCase();
         }
+
         directiveList.push(directive + " " + values.join(" "));
     }
 
