@@ -20,7 +20,7 @@ function sendFile(fallbackMIMEType:string = "application/octet-stream"):Middlewa
 
     const handle =  async (context:Context, next:Next) => {
 
-        const {request, response} = context;
+        const {response} = context;
 
         const sendFile = async (
             filepath:string, 
@@ -58,18 +58,10 @@ function sendFile(fallbackMIMEType:string = "application/octet-stream"):Middlewa
                     response.setHeader("x-content-type-options", "nosniff");
                 }
     
-                if(
-                    request.headers["if-modified-since"] && 
-                    mtime.toUTCString() === request.headers["if-modified-since"] &&
-                    !request.headers["cache-control"]
-                ){
-                    response.statusCode = 304;
-                    response.end();
-                }else{
-                    response.statusCode = response.statusCode === 200 ? 200:response.statusCode;
-                    const data = createReadStream(filepath);
-                    data.pipe(response);
-                }      
+                response.statusCode = response.statusCode === 200 ? 200:response.statusCode;
+                const data = createReadStream(filepath);
+                data.pipe(response);    
+
             }catch(error){
                 next(error);
             }

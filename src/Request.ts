@@ -1,5 +1,5 @@
-import { IncomingMessage } from "http";
 import { Http2ServerRequest } from "http2";
+
 
 export type Request =  Http2ServerRequest & {
     cookie:{

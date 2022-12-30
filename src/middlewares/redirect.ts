@@ -4,17 +4,23 @@ import { Next } from "../Next";
 
 function redirect():Middleware<Context>{
 
-    const handle = ({request, response}:Context, next:Next) => {
+    const handle = ({response}:Context, next:Next) => {
 
-        response.redirect = (path:string, statusCode?:number) => {
+        response.redirect = (path:string, statusCode:number = 303) => {
 
-            if(statusCode == null){
-                response.statusCode = 303;
-            }else if(Number.isInteger(statusCode) && statusCode !== 304 && statusCode > 300 && statusCode < 308){
-                response.statusCode = statusCode;
-            }else{
-                next(new Error("redirect status code should be between 301 - 308"));
-                return;
+            switch(statusCode){
+                case 301:
+                case 302:
+                case 303:
+                case 305:
+                case 306:
+                case 307:
+                case 308:
+                    response.statusCode = statusCode;
+                    break;
+                default:
+                    next(new Error("redirect status code should be between 301 - 308 and not including 304"));
+                    return;
             }
 
             response.setHeader("Location", path);

@@ -78,7 +78,7 @@ function session(name:string, storage:SessionStorage, {generateID = randomUUID, 
 
                 return session;
             },
-            async getLength(){
+            async getSize(){
                 return await storage.getLength();
             }
         };
