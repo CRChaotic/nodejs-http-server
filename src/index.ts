@@ -21,17 +21,16 @@ import { createSecureServer } from "http2";
 import secureTransport from "./middlewares/secureTransport";
 import session from "./middlewares/session";
 import InMemorySessionStorage from "./InMemorySessionStorage";
+import WebSocket, { WebSocketMessage } from "./websocket/WebSocket";
+import WebSocketServer from "./websocket/WebSocketServer";
+import SimpleAuthorizerImpl from "./websocket/SimpleAuthorizerImpl";
 
 const port = 8080;
 
 const router = new Router();
-const sessionStorage = InMemorySessionStorage();
+
 router.addRoute("GET", "/cookie", async (req, res) => {
     console.log(req.httpVersion);
-    const id = randomUUID();
-    res.setCookie("__Host-SESSION_ID", id);
-    sessionStorage.set(id, {v:"test value:"+Date.now()});
-    res.end("set cookie");
 }).addRoute("GET", "/*", (req, res) => {
     res.sendFile("src/views/404.html");
 }).addRoute("POST", "/form", (req, res) => {
@@ -49,23 +48,20 @@ router.addRoute("GET", "/cookie", async (req, res) => {
 }).addRoute("GET", "/math/:id/suffix", (req, res) => {
 
     res.send({params:req.params, queries:req.queries});
+
 }).addRoute("GET", "/redirect", (req, res) => {
+
     res.redirect("https://www.bing.com");
+
 }).addRoute("GET", "/download", (req, res) => {
+
     res.download("upload/str.c");
-}).addRoute("GET", "/session", async (req, res) => {
-    const id = req.cookie["__Host-SESSION_ID"];
-    let session:any = null; 
-    if(id != null){
-        session = await sessionStorage.get(id);
-    }
-    console.log(session);
-    res.send(session.value);
+
 }).addRoute("POST", "/login", async (req, res) => {
 
     if(req.form.username === "ryan"){
         await req.session.save({username:req.form.username}, {generateID:true,maxAge:10});
-        const length = await req.session.getLength();
+        const length = await req.session.getSize();
         console.log({length});
         res.redirect("/home");
     }else{
@@ -134,6 +130,45 @@ server.on("request", (req, res) => {
     const response = res as Response;
 
     pipeLine.execute({request, response});
-
 })
-server.listen(8080);
+server.listen(4433);
+
+// const auth = new SimpleAuthorizerImpl();
+// console.log(auth.addId());
+const wsServer = new WebSocketServer({
+    port:8081, 
+    key:readFileSync("./private/localhost.key"), 
+    cert:readFileSync("./private/localhost.crt"),
+});
+
+wsServer.on("listening", () => {
+    console.log("[INFO] Websocket server is listening");
+});
+wsServer.on("session", (ws:WebSocket) => {
+    console.log("new web socket session, remain sessions:", wsServer.sessions.size);
+    ws.send("hello");
+    ws.on("message", ({data, type, isFinished}:WebSocketMessage) => {
+        console.log("type:"+type, "isFinished:", isFinished);
+        // console.log("message:", data.toString("utf-8"));
+        if(data.toString() === "!close"){
+            ws.close();
+        }
+
+        wsServer.sessions.forEach((websocket) => {
+            if(ws === websocket){
+                return;
+            }
+            if(type === "text"){
+                websocket.send(data.toString());
+            }else if(type === "binary"){
+                websocket.send(data);
+            }
+        })
+    });
+    ws.on("close", () => {
+        console.log("ws closed, remain sessions:", wsServer.sessions.size);
+    });
+    ws.on("error", (err) => {
+        console.log(err);
+    });
+});
