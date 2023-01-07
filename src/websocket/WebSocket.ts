@@ -10,15 +10,14 @@ import parseMaskAndPayloadLength from "./utils/parseMaskAnyPayloadLength";
 
 const MAGIC_STRING = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const MAX_PAYLOAD_SIZE = 1024 * 10;
-const MAX_PAYLOAD_REASON_SIZE = 123;
+const MAX_CONTROL_FRAME_PAYLOAD_SIZE = 125;
+const CODE_SIZE = 2;
 const FramePart = Object.freeze({
     FIN_AND_OPCODE:0,
     MASK_AND_PAYLOAD_LENGTH:1,
     EXTENDED_PAYLOAD_LENGTH:2,
     PAYLOAD:3,
     MASKING_KEY:4,
-    PAYLOAD_CODE:5,
-    PAYLOAD_REASON:6
 });
 
 export type WebSocketMessage = {
@@ -48,8 +47,6 @@ class WebSocket extends EventEmitter{
     #payloadBuffer:number[] = [];
     #extendedPayloadLengthBuffer:number[] = [];
     #maskingKeyBuffer:number[] = [];
-    #codeBuffer:number[] = [];
-    #reasonBuffer:number[] = [];
     #isFinished:boolean = false;
     #isMasked:boolean = false;
     #frameType:FrameType = "UNKNOWN";
@@ -68,12 +65,10 @@ class WebSocket extends EventEmitter{
             socket.on("data", this.#handleData.bind(this));
             socket.on("error", (err) => this.emit("error", err));
             socket.on("close", () => {
-                console.log(2);
-
                 if(this.#readyState !== "CLOSED"){
                     this.emit("close", 1006);
-                }else if(this.#codeBuffer.length === 2){
-                    this.emit("close", Buffer.from(this.#codeBuffer).readUInt16BE(0), Buffer.from(this.#reasonBuffer).toString());
+                }else if(this.#payloadBuffer.length >= 2){
+                    this.emit("close", Buffer.from(this.#payloadBuffer).readUInt16BE(0), Buffer.from(this.#payloadBuffer).toString("utf-8", 2));
                 }else{
                     this.emit("close", 1005);
                 }
@@ -100,17 +95,21 @@ class WebSocket extends EventEmitter{
                     this.#isFinished = isFinished;
                     switch(frameType){
                         case "PONG":
+                            break;
                         case "UNKNOWN":
                             this.close(1008);
                             return;
                         case "PING":
+                            break;
                         case "CLOSE":
                             if(this.#readyState === "OPEN"){
+                                //"recieved close frame"
                                 this.#readyState = "CLOSING";
                             }else if(this.#readyState === "CLOSING"){
+                                //"recieved close frame response"
                                 this.#readyState = "CLOSED";
                             }
-                            //TO DO dealing with statusCode and reason
+                            //TO DO dealing with code and reason
                         case "TEXT":
                         case "BINARY":
                             this.#frameType = frameType;
@@ -126,10 +125,18 @@ class WebSocket extends EventEmitter{
                     const {isMasked, payloadLength, extendedPayloadLength} = parseMaskAndPayloadLength(data[offset]);
                     this.#isMasked = isMasked;
                     this.#payloadLength = BigInt(payloadLength);
+                    console.log("payloadLength:", this.#payloadLength);
 
-                    if(this.#readyState === "CLOSING" && this.#payloadLength > MAX_PAYLOAD_REASON_SIZE){
-                        this.close(1009);
-                        return;
+                    if(this.#readyState === "CLOSING"){
+                        if(payloadLength === 0){
+                            //no need to process payload etc when length of payload is 0
+                            this.close();
+                            return;
+                        }if(payloadLength > MAX_CONTROL_FRAME_PAYLOAD_SIZE){
+                            //exceeds control frame max size 125
+                            this.close(1009);
+                            return;
+                        }
                     }
      
                     if(extendedPayloadLength > 0){
@@ -142,7 +149,6 @@ class WebSocket extends EventEmitter{
                             framePart = FramePart.PAYLOAD;
                         }
 
-                        console.log("payloadLength:", this.#payloadLength);
                     }
 
                     offset++;
@@ -172,19 +178,7 @@ class WebSocket extends EventEmitter{
                     }
                     
                     if(this.#maskingKeyBuffer.length === 4){
-
-                        if(this.#readyState === "CLOSING"){
-
-                            if(this.#payloadLength === 0n){
-                                this.close();
-                                return;
-                            }else{
-                                framePart = FramePart.PAYLOAD_CODE;
-                            }
-
-                        }else{
-                            framePart = FramePart.PAYLOAD;
-                        }
+                        framePart = FramePart.PAYLOAD;
                         console.log("maskingKey:", Buffer.from(this.#maskingKeyBuffer));
                     }
 
@@ -209,14 +203,29 @@ class WebSocket extends EventEmitter{
                     //emit event when payload is enough
                     if(BigInt(this.#payloadCursor) === this.#payloadLength){
 
-                        this.emit("message", {
-                            data:Buffer.from(this.#payloadBuffer), 
-                            type:this.#frameType, 
-                            isFinished:this.#isFinished
-                        });
-
-                        this.#framePart = FramePart.FIN_AND_OPCODE;
-                        this.#resetFrameState();
+                        if(this.#readyState === "CLOSING"){
+                            if(this.#payloadBuffer.length >= 2){
+                                const code = Buffer.from(this.#payloadBuffer).readUInt16BE(0);
+                                const reason = Buffer.from(this.#payloadBuffer).toString("utf-8", 2);
+                                this.close(code, reason);
+                                return;
+                            }else{
+                                this.close();
+                                return;
+                            }
+                        }else if(this.#readyState === "CLOSED"){
+                            this.#socket.destroy();
+                            return;
+                        }else{
+                            this.emit("message", {
+                                data:Buffer.from(this.#payloadBuffer), 
+                                type:this.#frameType, 
+                                isFinished:this.#isFinished
+                            });
+                            framePart = FramePart.FIN_AND_OPCODE;
+                            this.#clearBuffer();
+                        }
+   
                     }else if(BigInt(this.#payloadBuffer.length) === BigInt(this.maxPayloadSize)){
                         //payload buffer reach max payload size, need to clear up
                         this.emit("message", {
@@ -230,50 +239,6 @@ class WebSocket extends EventEmitter{
 
                     offset++;
                     break;
-                case FramePart.PAYLOAD_CODE:
-                    if(this.#codeBuffer.length < 2){
-                        let byte:number;
-                        if(this.#isMasked){
-                            byte = data[offset] ^ this.#maskingKeyBuffer[this.#payloadCursor % 4];
-                        }else{
-                            byte = data[offset];
-                        }
-                        this.#codeBuffer.push(byte);
-                        this.#payloadCursor++;
-                    }
-
-                    if(this.#codeBuffer.length === 2){
-                        if(this.#payloadLength > 2){
-                            framePart = FramePart.PAYLOAD_REASON;
-                        }else{
-                            const code = Buffer.from(this.#codeBuffer).readUInt16BE(0);
-                            this.close(code);
-                            return;
-                        }
-                    }
-
-                    offset++;
-                    break;
-                case FramePart.PAYLOAD_REASON:
-                    if(this.#reasonBuffer.length < this.#payloadLength - 2n){
-                        let byte:number;
-                        if(this.#isMasked){
-                            byte = data[offset] ^ this.#maskingKeyBuffer[this.#payloadCursor % 4];
-                        }else{
-                            byte = data[offset];
-                        }
-                        this.#reasonBuffer.push(byte);
-                        this.#payloadCursor++;
-                    }
-
-                    if(BigInt(this.#reasonBuffer.length) === this.#payloadLength - 2n){
-                        const code = Buffer.from(this.#codeBuffer).readUInt16BE(0);
-                        this.close(code);
-                        return;
-                    }
-
-                    offset++;
-                    break;
             }
 
             this.#framePart = framePart;
@@ -281,8 +246,8 @@ class WebSocket extends EventEmitter{
 
     }
 
-    #resetFrameState(){
-        //not reset type so continuation frame can keep origin type
+    #clearBuffer(){
+        //not clear up frameType so that continuation frame can keep origin frameType
         this.#payloadBuffer = [];
         this.#maskingKeyBuffer = [];
         this.#extendedPayloadLengthBuffer = [];
@@ -361,10 +326,11 @@ class WebSocket extends EventEmitter{
         let reasonByteLength = 0;
         if(code != null && reason != null){
             reasonByteLength = Buffer.byteLength(reason);
-            if(reasonByteLength > MAX_PAYLOAD_REASON_SIZE){
+            if(reasonByteLength > MAX_CONTROL_FRAME_PAYLOAD_SIZE - CODE_SIZE){
                 this.emit("error", new Error(
+                    "close websocket fail, "+
                     "length of reason is "+ reasonByteLength +" bytes, "+
-                    "it must be less than 123 bytes"
+                    "it must be less than "+(MAX_CONTROL_FRAME_PAYLOAD_SIZE - CODE_SIZE)+" bytes"
                 ));
                 return;
             }
@@ -380,19 +346,23 @@ class WebSocket extends EventEmitter{
 
         const frame = createFrame({data, type:"CLOSE"});
 
+        //hasn't recieved close frame from endpoint and send close frame
+        //if not receiving close frame response for a while then closing the socket anyway
         if(this.#readyState === "OPEN"){
             socket.write(frame, (err) => {
                 this.#readyState = "CLOSING";
-
+                
                 setTimeout(() => {
                     if(this.#readyState !== "CLOSED"){
-                        this.#readyState = "CLOSED";
                         socket.destroy(err);
                         console.log("timeout close");
+                    }else{
+                        console.log("has close");
                     }
                 }, 5000);
             });
         }else{
+        //has recieved close frame from endpoint, sending close frame response and directly closing socket
             socket.write(frame, (err) => {
                 this.#readyState = "CLOSED";
                 socket.destroy(err);

@@ -153,7 +153,7 @@ wsServer.on("session", (ws:WebSocket) => {
         if(data.toString() === "!close"){
             ws.close(1000, "s");
         }
-
+        //broadcasting
         wsServer.sessions.forEach((websocket) => {
             if(ws === websocket){
                 return;
