@@ -1,30 +1,30 @@
 import OpCode from "./OpCode";
-import OpCodeType from "./OpCodeType";
+import FrameType from "./FrameType";
 
-function getTypeByOpCode(opCode:number):OpCodeType{
-    let type:OpCodeType = "unknown";
+function getFrameTypeByOpCode(opCode:number):FrameType{
+    let type:FrameType = "UNKNOWN";
     switch(opCode){
         case OpCode.TEXT:
-            type = "text";
+            type = "TEXT";
             break;
         case OpCode.BINARY:
-            type = "binary";
+            type = "BINARY";
             break;
         case OpCode.CONTINUATION:
-            type = "continuation";
+            type = "CONTINUATION";
             break;
         case OpCode.CLOSE:
-            type = "close";
+            type = "CLOSE";
             break;
         case OpCode.PING:
-            type = "ping";
+            type = "PING";
             break;
         case OpCode.PONG:
-            type = "pong";
+            type = "PONG";
             break;
     }
 
     return type;
 }
 
-export default getTypeByOpCode;
+export default getFrameTypeByOpCode;

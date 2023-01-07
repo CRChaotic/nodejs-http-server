@@ -1,9 +1,10 @@
+import { ExtendedPayloadLength } from "./ExtendedPayloadLength";
 
 function parseMaskAndPayloadLength(byte:number){
 
     const isMasked = (byte & 0b10000000) === 128;
     const payloadLength =  byte & 0b01111111;
-    let extendedPayloadLength:0|2|8 = 0;
+    let extendedPayloadLength:ExtendedPayloadLength = 0;
 
     if(payloadLength === 127){
         extendedPayloadLength = 8;

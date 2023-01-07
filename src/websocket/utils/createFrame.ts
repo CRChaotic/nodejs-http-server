@@ -1,6 +1,12 @@
-import OpCode from "./utils/OpCode";
+import OpCode from "./OpCode";
+import FrameType from "./FrameType";
 
-function createFrame({data, type = "text"}:{data?:Buffer, type:"text"|"binary"|"close"|"pong"|"ping"}):Buffer{
+type CreateFrameOptions = {
+    type:Exclude<FrameType, "UNKNOWN">;
+    data?:Buffer; 
+}
+
+function createFrame({type, data}:CreateFrameOptions):Buffer{
 
     let bodySize = 0;
     if(data){
@@ -25,21 +31,14 @@ function createFrame({data, type = "text"}:{data?:Buffer, type:"text"|"binary"|"
     if(isFinished){
         frame[offset] |= 0b10000000;
     }
+
     switch(type){
-        case "text":
-            frame[0] = frame[0] | OpCode.TEXT;
-            break;
-        case "binary":
-            frame[0] = frame[0] | OpCode.BINARY;
-            break;
-        case "close":
-            frame[0] = frame[0] | OpCode.CLOSE;
-            break;
-        case "ping":
-            frame[0] = frame[0] | OpCode.PING;
-            break;
-        case "pong":
-            frame[0] = frame[0] | OpCode.PONG;
+        case "TEXT":
+        case "BINARY":
+        case "CLOSE":
+        case "PING":
+        case "PONG":
+            frame[0] |= OpCode[type];
             break;
         default:
             throw new Error("type `" + type + "` is not supported");

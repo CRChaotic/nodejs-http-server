@@ -53,7 +53,7 @@ class WebSocketServer extends EventEmitter{
         }
 
         const webSocket = new WebSocket(websocketKey, socket);
-        webSocket.on("handshake", () => {
+        webSocket.once("handshake", () => {
             this.sessions.add(webSocket);
             this.emit("session", webSocket);
         });

@@ -151,22 +151,22 @@ wsServer.on("session", (ws:WebSocket) => {
         console.log("type:"+type, "isFinished:", isFinished);
         // console.log("message:", data.toString("utf-8"));
         if(data.toString() === "!close"){
-            ws.close();
+            ws.close(1000, "s");
         }
 
         wsServer.sessions.forEach((websocket) => {
             if(ws === websocket){
                 return;
             }
-            if(type === "text"){
+            if(type === "TEXT"){
                 websocket.send(data.toString());
-            }else if(type === "binary"){
+            }else if(type === "BINARY"){
                 websocket.send(data);
             }
         })
     });
-    ws.on("close", () => {
-        console.log("ws closed, remain sessions:", wsServer.sessions.size);
+    ws.on("close", (code, reason) => {
+        console.log("ws closed", "code:"+code , "reason:"+reason," remain sessions:", wsServer.sessions.size);
     });
     ws.on("error", (err) => {
         console.log(err);
