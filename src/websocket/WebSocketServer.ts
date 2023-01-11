@@ -1,64 +1,116 @@
-import { Server, Socket } from "net";
+import { Socket } from "net";
 import { IncomingMessage } from "http";
 import EventEmitter from "events";
 import WebSocket from "./WebSocket";
-import { createServer } from "https";
+import { createServer, Server } from "https";
 import { Authorizer } from "./Authorizer";
+import { createHash } from "crypto";
+import parseHeaders from "./utils/parseHeaders";
+
+const MAGIC_STRING = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const UPGRADE_PROTOCOL = "websocket";
+const PROTOCOL_VERSION = "13";
 
 export type WebSocketServerOptions = {
     port:number;
     key:Buffer;
     cert:Buffer;
+    allowOrigin?:string[];
     path?:string;
     authorizer?:Authorizer;
 };
 
 class WebSocketServer extends EventEmitter{
 
-    sessions:Set<WebSocket>;
+    readonly connections:Set<WebSocket>;
     #server:Server;
     path:string;
+    allowOrigin?:string[];
     authorizer:WebSocketServerOptions["authorizer"];
 
-    constructor({port, key, cert, path = "/", authorizer}:WebSocketServerOptions){
+    constructor({port, key, cert, allowOrigin, path = "/", authorizer}:WebSocketServerOptions){
         super();
-        this.sessions = new Set();
+        this.connections = new Set();
         this.path = path;
         this.authorizer = authorizer;
+        this.allowOrigin = allowOrigin;
+
         this.#server = createServer({key, cert});
         this.#server.listen(port);
         this.#server.addListener("error", (err) => this.emit("error", err));
         this.#server.addListener("listening", () => this.emit("listening"));
-        this.#server.addListener("upgrade", this.#handleUpdrade.bind(this));
+        this.#server.addListener("upgrade", this.handleUpdrade.bind(this));
     }
 
-    #handleUpdrade(req:IncomingMessage, socket:Socket){
+    protected handleUpdrade(req:IncomingMessage, socket:Socket){
+        // console.log(req.headers, req.httpVersion);
+        const webSocketKey = req.headers["sec-websocket-key"];
+        const webSocketVersion = req.headers["sec-websocket-version"];
+        const isValidUpgradeProtocol = req.headers["upgrade"]?.split(",").includes(UPGRADE_PROTOCOL);
+        //check out if it is a valid websocket upgrade
+        if(
+            !isValidUpgradeProtocol || 
+            webSocketVersion !== PROTOCOL_VERSION ||
+            webSocketKey == null
+        ){
+            let headers:{[k:string]:string} = {
+                connection:"upgrade",
+                upgrade:UPGRADE_PROTOCOL
+            };
+            if(webSocketVersion !== PROTOCOL_VERSION){
+                headers["sec-websocket-version"] = PROTOCOL_VERSION;
+            }
+
+            socket.write(parseHeaders(426, "Upgrade Required", headers), () => socket.destroy());
+            return;
+        }
 
         const url = new URL(`https://localhost${req.url}`);
-        const websocketKey = req.headers["sec-websocket-key"];
-
-        if(url.pathname !== this.path || req.headers["upgrade"] !== "websocket" || websocketKey == null){
-            socket.write("HTTP/1.1 400 Bad Request");
-            socket.destroy();
+        const origin = req.headers["origin"];
+        //check out if it is allowed origin and correct path, "*" means no need to check out origin
+        if(
+            url.pathname !== this.path ||
+            origin == null ||
+            (this.allowOrigin && !this.allowOrigin.includes(origin))
+        ){
+            const headers = parseHeaders(403, "Forbidden");
+            socket.write(headers, () => socket.destroy());
             return;
         }
-
+        //authenticate request if it needs
         if(this.authorizer && !this.authorizer.authenticate(req)){
-            socket.write(
-                "HTTP/1.1 401 Unauthorized\r\n"+
-                "\r\n"
-            );
-            socket.destroy();
+            const headers = parseHeaders(401, "Unauthorized");
+            // console.log({headers});
+            socket.write(headers, () => socket.destroy());
             return;
         }
+        
+        this.completeOpenHandshake(webSocketKey, socket, (err) => {
+            if(err){
+                return;
+            }
+            console.log("[INFO] completed websocket handshake");
 
-        const webSocket = new WebSocket(websocketKey, socket);
-        webSocket.once("handshake", () => {
-            this.sessions.add(webSocket);
-            this.emit("session", webSocket);
+            const webSocket = new WebSocket(req.socket);
+            this.connections.add(webSocket);
+            webSocket.prependListener("close", () => this.connections.delete(webSocket));
+    
+            this.emit("connection", webSocket); 
         });
+        
+    }
 
-        webSocket.on("close", () => this.sessions.delete(webSocket));
+    protected completeOpenHandshake(webSocketKey:string, socket:Socket, callback?:((err?: Error) => void)){
+
+        const webSocketAccept = createHash("sha1").update(webSocketKey + MAGIC_STRING).digest("base64");
+        const handshakeResponse = parseHeaders(101, "Switching Protocols", {
+            "connection": "upgrade",
+            "upgrade": UPGRADE_PROTOCOL,
+            "sec-websocket-accept":webSocketAccept
+        });
+        // console.log({handshakeResponse});
+        socket.write(handshakeResponse, callback);
+
     }
 
 }

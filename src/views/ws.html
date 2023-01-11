@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ws</title>
+</head>
+<body>
+    <div>
+        <input type="text" id="message"/><br/>
+        <div>
+            status:<span id="status">closed</span>
+        </div>
+
+        <div>
+            code:<span id="code"></span><br>
+            reason:<span id="reason"></span>
+        </div>
+        <button type="button" id="connect">connect</button>
+        <button type="button" id="send">send</button>
+
+        <div>
+            <input id="rangeInput" type="range" value="0" min="0" max="100" step="1"/>
+            <select id="unitSelector">
+                <option value="B" selected>B</option>
+                <option value="KB">KB</option>
+                <option value="MB">MB</option>
+                <option value="GB">GB</option>
+            </select>
+            <div>
+                <button type="button" id="blockSender">send 0</button>
+            </div>
+        </div>
+
+        <div>
+            code:<input id="codeInput"/>
+            reason:<input id="reasonInput"/>
+            <button type="button" id="close">close</button>
+        </div>
+
+        <div>
+            <div>receiver:</div>
+            <textarea id="receiver" rows="20" cols="50" readonly></textarea>
+        </div>
+    </div>
+
+    <script src="/static/js/ws.js"></script>
+</body>
+</html>

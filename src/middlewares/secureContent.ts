@@ -6,20 +6,22 @@ import { Response } from "../Response";
 
 
 type ContentSecurityPolicyDirectives = {
-    defaultSrc?: string[]
-    scriptSrc?: string[];
-    styleSrc?: string[]; 
-    imgSrc?: string[];
-    mediaSrc?: string[];
-    fontSrc?: string[];
-    frameAncestors?: string[]; 
-    frameSrc?: string[];
-    formAction?: string[];
-    objectSrc?: string[];
-    manifestSrc?:string[];
-    workSrc?: string[];
-    baseUri?: string[];
-    sandbox?: string[];
+    "default-src"?: string[]
+    "script-src"?: string[];
+    "style-src"?: string[]; 
+    "img-src"?: string[];
+    "media-src"?: string[];
+    "font-src"?: string[];
+    "object-src"?: string[];
+    "frame-src"?: string[];
+    "manifest-src"?:string[];
+    "work-src"?: string[];
+    "connect-src"?:string[];
+    "base-uri"?: string[];
+    "frame-ancestors"?: string[]; 
+    "form-action"?: string[];
+    "sandbox"?: string[];
+    "upgrade-insecure-requests"?:boolean, 
 }
 
 type SecureContentFilter = (request:Request, response:Response) => boolean;
@@ -32,7 +34,7 @@ export type SecureContentOptions = {
 
 const defaultFilter:SecureContentFilter =  (req:Request, res:Response) => {
 
-    const contentType:any = res.getHeader("content-type");
+    const contentType = res.getHeader("content-type");
 
     if(
         typeof contentType === "string" &&
@@ -47,27 +49,39 @@ const defaultFilter:SecureContentFilter =  (req:Request, res:Response) => {
 
 function secureContent({
     directives = {}, 
-    upgradeInsecureRequests = true, 
     filter = defaultFilter
 }:SecureContentOptions = {}):Middleware<Context>{
 
     const directiveList:string[] = [];
+    const upgradeInsecureRequests = directives["upgrade-insecure-requests"]??true;
 
-    if(!directives.defaultSrc){
+    if(!directives["default-src"]){
         directiveList.push("default-src 'self'");
     }
-
+    if(!directives["style-src"]){
+        directiveList.push("style-src 'self' 'unsafe-inline' https:");
+    }
+    if(!directives["img-src"]){
+        directiveList.push("img-src 'self' data:");
+    }
+    if(!directives["font-src"]){
+        directiveList.push("font-src 'self' data:");
+    }
+    if(!directives["object-src"]){
+        directiveList.push("object-src 'none'");
+    }
     if(upgradeInsecureRequests){
         directiveList.push("upgrade-insecure-requests");
     }
     
     for(let [directive, values] of Object.entries(directives)){
-        const hyphenPosition = Array.prototype.findIndex.call(directive, (char:string) => /[A-Z]/.test(char));
-        if(hyphenPosition !== -1){
-            directive = directive.slice(0, hyphenPosition) + "-" + directive.slice(hyphenPosition).toLocaleLowerCase();
+        // const hyphenPosition = Array.prototype.findIndex.call(directive, (char:string) => /[A-Z]/.test(char));
+        // if(hyphenPosition !== -1){
+        //     directive = directive.slice(0, hyphenPosition) + "-" + directive.slice(hyphenPosition).toLocaleLowerCase();
+        // }
+        if(Array.isArray(values)){
+            directiveList.push(directive + " " + values.join(" "));
         }
-
-        directiveList.push(directive + " " + values.join(" "));
     }
 
     const contentSecurityPolicyHeader = directiveList.join("; ");

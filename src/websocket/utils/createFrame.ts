@@ -1,12 +1,11 @@
 import OpCode from "./OpCode";
-import FrameType from "./FrameType";
 
 type CreateFrameOptions = {
-    type:Exclude<FrameType, "UNKNOWN">;
+    opCode:Exclude<OpCode, OpCode.UNKNOWN>;
     data?:Buffer; 
 }
 
-function createFrame({type, data}:CreateFrameOptions):Buffer{
+function createFrame({opCode, data}:CreateFrameOptions):Buffer{
 
     let bodySize = 0;
     if(data){
@@ -32,17 +31,7 @@ function createFrame({type, data}:CreateFrameOptions):Buffer{
         frame[offset] |= 0b10000000;
     }
 
-    switch(type){
-        case "TEXT":
-        case "BINARY":
-        case "CLOSE":
-        case "PING":
-        case "PONG":
-            frame[0] |= OpCode[type];
-            break;
-        default:
-            throw new Error("type `" + type + "` is not supported");
-    }
+    frame[0] |= opCode;
     offset += 1;
 
     frame[offset] = frame[offset] | payloadLength;

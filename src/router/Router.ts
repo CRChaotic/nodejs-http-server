@@ -5,7 +5,7 @@ import { Middleware } from "../Middleware";
 import { Next } from "../Next";
 import { Context } from "../Context";
 
-type Method = "GET"|"POST"|"PUT"|"DELETE"|"PATCH"|"HEAD"|"OPTIONS"|"CONNECT";
+type Method = "GET"|"POST"|"PUT"|"DELETE"|"PATCH"|"HEAD"|"OPTIONS";
 
 type RouterCallback = (
     request: Request,

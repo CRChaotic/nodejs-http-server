@@ -21,9 +21,11 @@ import { createSecureServer } from "http2";
 import secureTransport from "./middlewares/secureTransport";
 import session from "./middlewares/session";
 import InMemorySessionStorage from "./InMemorySessionStorage";
-import WebSocket, { WebSocketMessage } from "./websocket/WebSocket";
+import WebSocket, { ReadyState, WebSocketMessage } from "./websocket/WebSocket";
 import WebSocketServer from "./websocket/WebSocketServer";
 import SimpleAuthorizerImpl from "./websocket/SimpleAuthorizerImpl";
+import OpCode from "./websocket/utils/OpCode";
+import { createServer, IncomingMessage } from "http";
 
 const port = 8080;
 
@@ -92,7 +94,9 @@ router.addRoute("GET", "/cookie", async (req, res) => {
     }else{
         res.redirect("/login");
     }
-});
+}).addRoute("GET", "/ws", (req, res) => {
+    res.sendFile("src/views/ws.html");
+})
 
 
 const pipeLine = new Pipeline<Context>([
@@ -105,7 +109,12 @@ const pipeLine = new Pipeline<Context>([
     resolveURLEncodedFormData(),
     download(),
     secureFrame(),
-    secureContent({directives:{frameAncestors:["'none'"]}}),
+    secureContent({
+        directives:{
+            "frame-ancestors":["'none'"], 
+            "connect-src":["https:", "ws:"]
+        }
+    }),
     secureOpener(),
     secureTransport({maxAge:60}),
     session("__Host-SID", InMemorySessionStorage()),
@@ -126,17 +135,17 @@ const server = createSecureServer({
 
 server.on("request", (req, res) => {
 
-    const request = req as Request;
-    const response = res as Response;
+    const request = (req as unknown) as Request;
+    const response = (res as unknown) as Response;
 
     pipeLine.execute({request, response});
 })
-server.listen(4433);
+server.listen(8080);
 
 // const auth = new SimpleAuthorizerImpl();
 // console.log(auth.addId());
 const wsServer = new WebSocketServer({
-    port:8081, 
+    port:8081,
     key:readFileSync("./private/localhost.key"), 
     cert:readFileSync("./private/localhost.crt"),
 });
@@ -144,31 +153,107 @@ const wsServer = new WebSocketServer({
 wsServer.on("listening", () => {
     console.log("[INFO] Websocket server is listening");
 });
-wsServer.on("session", (ws:WebSocket) => {
-    console.log("new web socket session, remain sessions:", wsServer.sessions.size);
+
+wsServer.on("connection", (ws:WebSocket) => {
+    console.log("new websocket connection, remain connections:", wsServer.connections.size);
+    // ws.setTimeout(3000);
     ws.send("hello");
-    ws.on("message", ({data, type, isFinished}:WebSocketMessage) => {
-        console.log("type:"+type, "isFinished:", isFinished);
+
+    let timer:NodeJS.Timeout;
+    let pong = true;
+    let autoPing = function () {
+        timer = setTimeout(() => {
+            if(!pong){
+                ws.close();
+                clearTimeout(timer);
+            }else{
+                pong = false;
+                ws.ping();
+                autoPing();
+            }
+        }, 5000);
+    };
+    // autoPing();
+    ws.on("pong", () =>{
+        pong = true;
+        console.log("recieved pong");
+    });
+
+    ws.on("timeout", () => {
+        ws.close(1000, "timeout");
+    });
+
+    ws.on("message", ({data, opCode, isFinished}:WebSocketMessage) => {
+        console.log("opCode:"+opCode, "isFinished:", isFinished);
         // console.log("message:", data.toString("utf-8"));
         if(data.toString() === "!close"){
-            ws.close(1000, "s");
+            ws.close(1000, "bye");
         }
         //broadcasting
-        wsServer.sessions.forEach((websocket) => {
-            if(ws === websocket){
+        wsServer.connections.forEach(async (websocket) => {
+            if(ws === websocket || websocket.readyState !== ReadyState.OPEN){
                 return;
             }
-            if(type === "TEXT"){
-                websocket.send(data.toString());
-            }else if(type === "BINARY"){
-                websocket.send(data);
+            if(opCode === OpCode.TEXT){
+                try{
+                    await websocket.send(data.toString("utf-8"));
+                }catch(err){
+                    console.log(err);
+                }
+            }else if(opCode === OpCode.BINARY){
+                try{
+                    await websocket.send(data);
+                }catch(err){
+                    console.log(err);
+                }
             }
         })
     });
     ws.on("close", (code, reason) => {
-        console.log("ws closed", "code:"+code , "reason:"+reason," remain sessions:", wsServer.sessions.size);
+        console.log("ws closed", "code:"+code , "reason:"+reason," remain connections:", wsServer.connections.size);
     });
     ws.on("error", (err) => {
         console.log(err);
     });
 });
+
+function pushBufferTest(data:Buffer){
+    const buffer:number[] = [];
+
+    for(let i = 0; i < data.byteLength; i++){
+        buffer.push(data[i]);
+    }
+
+    return Buffer.from(buffer);
+}
+
+function allocUnsafeBufferTest(data:Buffer, allocUnsafeBuffer:Buffer){
+    for(let i = 0; i < data.byteLength; i++){
+        allocUnsafeBuffer[i] = data[i];
+    }
+
+    return allocUnsafeBuffer;
+}
+
+function allocBufferTest(data:Buffer, allocBuffer:Buffer){
+    for(let i = 0; i < data.byteLength; i++){
+        allocBuffer[i] = data[i];
+    }
+
+    return allocBuffer;
+}
+// const data = Buffer.alloc(1024**2*100, "x");
+// const allocUnSafeBuffer = Buffer.allocUnsafe(data.byteLength);
+// const allocBuffer = Buffer.alloc(data.byteLength);
+
+// let start = Date.now();
+// pushBufferTest(data);
+// console.log("pushBufferTest time:", Date.now() - start);
+
+// start = Date.now();
+// allocUnsafeBufferTest(data, allocUnSafeBuffer);
+// console.log("allocUnsafeBufferTest time:", Date.now() - start);
+
+// start = Date.now();
+// allocBufferTest(data, allocBuffer);
+// console.log("allocBufferTest time:", Date.now() - start);
